@@ -172,3 +172,126 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         await Task.Delay(1000, stoppingToken);
     }
 }
+
+_______
+1. Бинарная сериализация (для простых объектов)
+csharp
+
+private byte[] ConvertXmlToBinary(string xml)
+{
+    // 1. Десериализация XML в объект
+    var serializer = new XmlSerializer(typeof(DataModel));
+    using var xmlReader = new StringReader(xml);
+    var data = (DataModel)serializer.Deserialize(xmlReader)!;
+
+    // 2. Бинарная сериализация
+    using var memoryStream = new MemoryStream();
+    var binaryFormatter = new BinaryFormatter();
+    
+    binaryFormatter.Serialize(memoryStream, data);
+    return memoryStream.ToArray();
+}
+
+Где DataModel - ваш класс для хранения данных:
+csharp
+
+[Serializable]
+[XmlRoot("Data")]
+public class DataModel
+{
+    [XmlElement("Id")]
+    public int Id { get; set; }
+    
+    [XmlElement("Name")]
+    public string Name { get; set; }
+    
+    [XmlArray("Items")]
+    [XmlArrayItem("Item")]
+    public List<string> Items { get; set; }
+}
+
+2. Ручная упаковка (для максимальной производительности)
+csharp
+
+private byte[] ConvertXmlToBinary(string xml)
+{
+    using var xmlDoc = XDocument.Parse(xml);
+    using var memoryStream = new MemoryStream();
+    using var writer = new BinaryWriter(memoryStream);
+
+    // Сериализация основных полей
+    var root = xmlDoc.Root!;
+    writer.Write(root.Element("Id")?.Value ?? "0");
+    writer.Write(root.Element("Name")?.Value ?? "");
+    
+    // Сериализация коллекции
+    var items = root.Element("Items")?.Elements("Item");
+    writer.Write(items?.Count() ?? 0);
+    foreach (var item in items ?? Enumerable.Empty<XElement>())
+    {
+        writer.Write(item.Value);
+    }
+
+    return memoryStream.ToArray();
+}
+
+3. Альтернатива с System.Text.Json (для .NET Core+)
+csharp
+
+private byte[] ConvertXmlToBinary(string xml)
+{
+    // XML -> Объект
+    using var xmlDoc = XDocument.Parse(xml);
+    var data = new DataModel
+    {
+        Id = int.Parse(xmlDoc.Root?.Element("Id")?.Value ?? "0"),
+        Name = xmlDoc.Root?.Element("Name")?.Value ?? ""
+    };
+
+    // Объект -> Binary JSON
+    return JsonSerializer.SerializeToUtf8Bytes(data);
+}
+
+Полный пример с обработкой ошибок
+csharp
+
+private byte[] ConvertXmlToBinary(string xml)
+{
+    try
+    {
+        // Валидация XML
+        if (string.IsNullOrWhiteSpace(xml))
+            throw new ArgumentException("Empty XML content");
+
+        using var xmlDoc = XDocument.Parse(xml);
+        
+        // Проверка обязательных полей
+        if (xmlDoc.Root?.Element("Id") == null)
+            throw new InvalidOperationException("Missing required Id field");
+
+        // Основная логика сериализации
+        using var memoryStream = new MemoryStream();
+        using (var writer = new BinaryWriter(memoryStream))
+        {
+            writer.Write(xmlDoc.Root.Element("Id")!.Value);
+            writer.Write(xmlDoc.Root.Element("Name")?.Value ?? "");
+            
+            // Пример обработки коллекции
+            var items = xmlDoc.Root.Element("Items")?.Elements() 
+                ?? Enumerable.Empty<XElement>();
+            
+            writer.Write(items.Count());
+            foreach (var item in items)
+            {
+                writer.Write(item.Value);
+            }
+        }
+
+        return memoryStream.ToArray();
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "XML to binary conversion failed");
+        throw; // или возврат пустого массива
+    }
+}
