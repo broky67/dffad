@@ -55,6 +55,77 @@
             return succeeded;
         }
 вовововов
+
+Сначала убедитесь, что метод **действительно создает бинарный файл**, а не XML:
+```csharp
+// Тестовый вызов
+var testObj = new Pilot.TargetPlatform.DeviceDescription();
+XmlHelper.Serialize("test.bin", testObj);
+
+// Проверка содержимого файла
+var content = File.ReadAllText("test.bin");
+Console.WriteLine(IsBinary(content) ? "Это бинарный файл" : "Это XML/текст");
+
+bool IsBinary(string content) => content.Contains('\0');
+```
+
+---
+
+### ✅ **Интеграция в сервис (если метод рабочий)**
+
+#### 1. Обновленный `XmlConverterService.cs`
+```csharp
+public class XmlConverterService
+{
+    private readonly ILogger<XmlConverterService> _logger;
+
+    public XmlConverterService(ILogger<XmlConverterService> logger)
+    {
+        _logger = logger;
+    }
+
+    public async Task ConvertXmlToBinAsync(string xmlFilePath, string outputDirectory)
+    {
+        try
+        {
+            await WaitForFileAvailable(xmlFilePath);
+
+            // 1. Чтение XML
+            var xmlContent = await File.ReadAllTextAsync(xmlFilePath);
+
+            // 2. Десериализация в объект
+            var xmlSerializer = new XmlSerializer(typeof(Pilot.TargetPlatform.DeviceDescription));
+            Pilot.TargetPlatform.DeviceDescription dataObject;
+            
+            using (var reader = new StringReader(xmlContent))
+            {
+                dataObject = (Pilot.TargetPlatform.DeviceDescription)xmlSerializer.Deserialize(reader);
+            }
+
+            // 3. Конвертация через XmlHelper
+            var outputPath = Path.Combine(outputDirectory, Path.GetFileNameWithoutExtension(xmlFilePath) + ".bin");
+            XmlHelper.Serialize(outputPath, dataObject);
+
+            _logger.LogInformation($"Успешно сконвертировано: {xmlFilePath} → {outputPath}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Ошибка конвертации файла {xmlFilePath}");
+            throw;
+        }
+    }
+
+ПОТОМ
+
+// Вместо этого:
+XmlHelper.Serialize(outputPath, dataObject);
+
+// Используйте это:
+await using (var stream = File.Create(outputPath))
+{
+    new BinaryFormatter().Serialize(stream, dataObject);
+}
+
 вовоовв
 Services/IFileWatcherService.cs
 csharp
