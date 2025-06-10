@@ -216,3 +216,28 @@ json
     }
   }
 }
+
+
+
+ррррр
+
+using System.Xml.Serialization;
+using ExternalProject; // Пространство имён, где находится ExternalSerializer
+
+public class XmlConverterService
+{
+    public void ConvertXmlFileToBinary(string xmlFilePath, string outputBinaryPath)
+    {
+        // 1. Читаем XML-файл и десериализуем его в объект
+        var xmlSerializer = new XmlSerializer(typeof(YourDataClass)); // Замените YourDataClass на ваш класс
+        YourDataClass dataObject;
+
+        using (var reader = new StreamReader(xmlFilePath))
+        {
+            dataObject = (YourDataClass)xmlSerializer.Deserialize(reader);
+        }
+
+        // 2. Сериализуем объект в бинарный формат через статический метод
+        ExternalSerializer.Serialize(outputBinaryPath, dataObject);
+    }
+}
