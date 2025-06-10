@@ -1,3 +1,13 @@
+    public class ConverterService
+    {
+        private readonly string _xmlFilePath = @"C:\Users\ba-romanov\xmltest\";
+        private ProjectViewModel _projectViewModel;
+        public ConverterService(ProjectViewModel projectViewModel)
+        {
+            _projectViewModel = projectViewModel;
+        }
+        public async Task ConvertXmlToBinAsync(string xmlFilePath, string outputDirectory)
+        {
             try
             {
                 
@@ -6,11 +16,11 @@
                 var xmlContent = await File.ReadAllTextAsync(xmlFilePath);
                 var outputPath = _xmlFilePath + Path.GetFileNameWithoutExtension(xmlFilePath) + ".bin";
 
-                var xmlSerializer = new XmlSerializer(typeof(DeviceDescription));
 
-                ProjectViewModel project;
-                var temp = project.GetSelectedProject();
+                DeviceDescription selectedProject = _projectViewModel.GetSelectedProject();
 
+                var xmlSerializer = new XmlSerializer(selectedProject.GetType());
+                DeviceDescription dataObject;
                 using (var reader = new StringReader(xmlContent))
                 {
                     dataObject = (DeviceDescription)xmlSerializer.Deserialize(reader);
@@ -21,6 +31,29 @@
                     new BinaryFormatter().Serialize(stream, dataObject);
                 }
             }
+            catch (Exception ex)
+            {
+                throw;
+            }
+        }
+        private void WaitForFileAvailable(string filePath, int timeoutMs = 5000)
+        {
+            var sw = Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                try
+                {
+                    using (var fs = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.None))
+                    {
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                }
+            }
+            throw new Exception("time exception");
+        }
+    }
 
-            Severity	Code	Description	Project	File	Line	Suppression State
-Error	CS0165	Use of unassigned local variable 'project'	XmlToBinaryConverterService	C:\Users\ba-romanov\projects\Pilot\XmlToBinaryConverterService\ConverterService.cs	29	Active
+_projectViewModel не
