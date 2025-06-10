@@ -1,3 +1,26 @@
+public async Task ConvertXmlToBinAsync(string xmlFilePath, string outputDirectory)
+{
+    await WaitForFileAvailable(xmlFilePath);
+    
+    // 1. Чтение XML
+    var xmlContent = await File.ReadAllTextAsync(xmlFilePath);
+    
+    // 2. Десериализация XML в объект (если нужно)
+    var xmlSerializer = new XmlSerializer(typeof(YourDataClass));
+    YourDataClass dataObject;
+    using (var reader = new StringReader(xmlContent))
+    {
+        dataObject = (YourDataClass)xmlSerializer.Deserialize(reader);
+    }
+    
+    // 3. Сериализация в бинарный формат через ваш статический метод
+    var outputPath = Path.Combine(outputDirectory, Path.GetFileNameWithoutExtension(xmlFilePath) + ".bin");
+    ExternalSerializer.Serialize(outputPath, dataObject); // Ваш метод
+    
+    _logger.LogInformation($"Converted {xmlFilePath} → {outputPath}");
+}
+вовововов
+вовоовв
 Services/IFileWatcherService.cs
 csharp
 
