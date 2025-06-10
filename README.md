@@ -1,297 +1,218 @@
-1. Архитектура решения
-text
-
-WorkerService/
-├── Services/
-│   ├── FileWatcherService.cs    // Мониторит папку
-│   ├── XmlToBinaryConverter.cs  // Логика конвертации
-└── Worker.cs                   // Основной сервис
-
-2. Ключевые компоненты
-
-FileWatcherService.cs - отслеживает новые файлы:
+Services/IFileWatcherService.cs
 csharp
 
-public class FileWatcherService : IDisposable
+public interface IFileWatcherService
 {
-    private readonly FileSystemWatcher _watcher;
-    private readonly string _inputPath;
+    event EventHandler<FileSystemEventArgs> FileCreated;
+    void StartWatching(string path, string filter);
+    void StopWatching();
+}
 
-    public event Action<string>? NewXmlFileDetected;
+Services/FileWatcherService.cs
+csharp
 
-    public FileWatcherService(string path)
+public class FileWatcherService : IFileWatcherService, IDisposable
+{
+    private readonly ILogger<FileWatcherService> _logger;
+    private FileSystemWatcher _watcher;
+
+    public event EventHandler<FileSystemEventArgs> FileCreated;
+
+    public FileWatcherService(ILogger<FileWatcherService> logger)
     {
-        _inputPath = path;
-        Directory.CreateDirectory(path); // Создаём папку если её нет
-        
-        _watcher = new FileSystemWatcher(path, "*.xml")
+        _logger = logger;
+    }
+
+    public void StartWatching(string path, string filter)
+    {
+        _watcher = new FileSystemWatcher
         {
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
-            EnableRaisingEvents = true
+            Path = path,
+            Filter = filter,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite
         };
 
         _watcher.Created += OnFileCreated;
+        _watcher.EnableRaisingEvents = true;
+        
+        _logger.LogInformation($"Started watching folder: {path} for {filter} files");
     }
 
     private void OnFileCreated(object sender, FileSystemEventArgs e)
     {
-        NewXmlFileDetected?.Invoke(e.FullPath);
+        _logger.LogInformation($"New file detected: {e.Name}");
+        FileCreated?.Invoke(this, e);
     }
 
-    public void Dispose() => _watcher.Dispose();
+    public void StopWatching()
+    {
+        if (_watcher != null)
+        {
+            _watcher.EnableRaisingEvents = false;
+            _watcher.Dispose();
+        }
+    }
+
+    public void Dispose() => StopWatching();
 }
 
-XmlToBinaryConverter.cs - конвертирует XML:
+Services/IXmlConverterService.cs
 csharp
 
-public class XmlToBinaryConverter
+public interface IXmlConverterService
 {
-    private readonly string _outputPath;
+    Task ConvertXmlToBinAsync(string xmlFilePath, string outputDirectory);
+}
 
-    public XmlToBinaryConverter(string outputPath)
+Services/XmlConverterService.cs
+csharp
+
+public class XmlConverterService : IXmlConverterService
+{
+    private readonly ILogger<XmlConverterService> _logger;
+
+    public XmlConverterService(ILogger<XmlConverterService> logger)
     {
-        _outputPath = outputPath;
-        Directory.CreateDirectory(outputPath);
+        _logger = logger;
     }
 
-    public async Task ConvertAsync(string xmlFilePath)
+    public async Task ConvertXmlToBinAsync(string xmlFilePath, string outputDirectory)
     {
         try
         {
-            var xmlData = await File.ReadAllTextAsync(xmlFilePath);
-            var binaryData = ConvertXmlToBinary(xmlData);
+            // 1. Проверяем существование файла
+            await WaitForFileAvailable(xmlFilePath);
             
-            string outputFile = Path.Combine(
-                _outputPath, 
-                $"{Path.GetFileNameWithoutExtension(xmlFilePath)}.bin");
+            // 2. Читаем XML
+            var xmlContent = await File.ReadAllTextAsync(xmlFilePath);
             
-            await File.WriteAllBytesAsync(outputFile, binaryData);
+            // 3. Конвертируем в бинарный формат (ваша логика)
+            byte[] binaryData = Encoding.UTF8.GetBytes(xmlContent);
+            
+            // 4. Сохраняем результат
+            var outputPath = Path.Combine(outputDirectory, 
+                Path.GetFileNameWithoutExtension(xmlFilePath) + ".bin");
+            
+            await File.WriteAllBytesAsync(outputPath, binaryData);
+            
+            _logger.LogInformation($"Successfully converted {xmlFilePath} to {outputPath}");
         }
         catch (Exception ex)
         {
-            // Логирование ошибок
+            _logger.LogError(ex, $"Error converting file {xmlFilePath}");
+            throw;
         }
     }
 
-    private byte[] ConvertXmlToBinary(string xml)
+    private async Task WaitForFileAvailable(string filePath, int timeoutMs = 5000)
     {
-        // Реальная логика конвертации
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        // ... ваша логика сериализации ...
-        return stream.ToArray();
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < timeoutMs)
+        {
+            try
+            {
+                using (var fs = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.None))
+                {
+                    return; // Файл доступен
+                }
+            }
+            catch (IOException)
+            {
+                await Task.Delay(100);
+            }
+        }
+        throw new TimeoutException($"File {filePath} is locked after {timeoutMs}ms");
     }
 }
 
-Worker.cs - связующий компонент:
+3. Реализация Worker
+Workers/ConversionWorker.cs
 csharp
 
-public class Worker : BackgroundService
+public class ConversionWorker : BackgroundService
 {
-    private readonly ILogger<Worker> _logger;
-    private readonly FileWatcherService _fileWatcher;
-    private readonly XmlToBinaryConverter _converter;
+    private readonly IFileWatcherService _fileWatcher;
+    private readonly IXmlConverterService _converter;
+    private readonly IConfiguration _config;
+    private readonly ILogger<ConversionWorker> _logger;
 
-    public Worker(
-        ILogger<Worker> logger,
-        FileWatcherService fileWatcher,
-        XmlToBinaryConverter converter)
+    public ConversionWorker(
+        IFileWatcherService fileWatcher,
+        IXmlConverterService converter,
+        IConfiguration config,
+        ILogger<ConversionWorker> logger)
     {
-        _logger = logger;
         _fileWatcher = fileWatcher;
         _converter = converter;
+        _config = config;
+        _logger = logger;
     }
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _fileWatcher.NewXmlFileDetected += async file => 
-        {
-            _logger.LogInformation($"Processing new file: {file}");
-            await _converter.ConvertAsync(file);
-        };
+        var inputPath = _config["Folders:Input"] ?? "C:/XmlInput";
+        var outputPath = _config["Folders:Output"] ?? "C:/BinOutput";
         
+        // Создаем выходную директорию, если ее нет
+        Directory.CreateDirectory(outputPath);
+
+        _fileWatcher.FileCreated += async (sender, e) => 
+        {
+            try
+            {
+                await _converter.ConvertXmlToBinAsync(e.FullPath, outputPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error processing file {e.Name}");
+            }
+        };
+
+        _fileWatcher.StartWatching(inputPath, "*.xml");
+        
+        _logger.LogInformation($"Worker started. Watching: {inputPath}");
+
         return Task.CompletedTask;
     }
-
-    public override void Dispose()
-    {
-        _fileWatcher.Dispose();
-        base.Dispose();
-    }
 }
 
-3. Настройка в Program.cs
+4. Настройка в Program.cs
 csharp
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = Host.CreateDefaultBuilder(args);
 
-// Конфигурация путей
-string inputPath = Path.Combine(AppContext.BaseDirectory, "XmlInput");
-string outputPath = Path.Combine(AppContext.BaseDirectory, "BinaryOutput");
-
-// Регистрация сервисов
-builder.Services.AddSingleton(new FileWatcherService(inputPath));
-builder.Services.AddSingleton(new XmlToBinaryConverter(outputPath));
-builder.Services.AddHostedService<Worker>();
+builder.ConfigureServices((context, services) =>
+{
+    // Конфигурация
+    services.Configure<FolderSettings>(context.Configuration.GetSection("Folders"));
+    
+    // Сервисы
+    services.AddSingleton<IFileWatcherService, FileWatcherService>();
+    services.AddSingleton<IXmlConverterService, XmlConverterService>();
+    
+    // Worker
+    services.AddHostedService<ConversionWorker>();
+    
+    // Логирование
+    services.AddLogging(configure => configure.AddConsole());
+});
 
 var host = builder.Build();
-host.Run();
+await host.RunAsync();
 
-4. Дополнительные улучшения
+5. Конфигурация (appsettings.json)
+json
 
-Обработка существующих файлов при старте:
-csharp
-
-public class FileWatcherService : IDisposable
 {
-    // ... остальной код ...
-    
-    public void ProcessExistingFiles()
-    {
-        foreach (var file in Directory.GetFiles(_inputPath, "*.xml"))
-        {
-            NewXmlFileDetected?.Invoke(file);
-        }
+  "Folders": {
+    "Input": "C:/XmlInput",
+    "Output": "C:/BinOutput"
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft": "Warning",
+      "Microsoft.Hosting.Lifetime": "Information"
     }
-}
-
-В Worker.cs:
-csharp
-
-protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-{
-    _fileWatcher.ProcessExistingFiles(); // Обработка файлов при старте
-    
-    _fileWatcher.NewXmlFileDetected += async file => 
-    {
-        await _converter.ConvertAsync(file);
-    };
-    
-    while (!stoppingToken.IsCancellationRequested)
-    {
-        await Task.Delay(1000, stoppingToken);
-    }
-}
-
-_______
-1. Бинарная сериализация (для простых объектов)
-csharp
-
-private byte[] ConvertXmlToBinary(string xml)
-{
-    // 1. Десериализация XML в объект
-    var serializer = new XmlSerializer(typeof(DataModel));
-    using var xmlReader = new StringReader(xml);
-    var data = (DataModel)serializer.Deserialize(xmlReader)!;
-
-    // 2. Бинарная сериализация
-    using var memoryStream = new MemoryStream();
-    var binaryFormatter = new BinaryFormatter();
-    
-    binaryFormatter.Serialize(memoryStream, data);
-    return memoryStream.ToArray();
-}
-
-Где DataModel - ваш класс для хранения данных:
-csharp
-
-[Serializable]
-[XmlRoot("Data")]
-public class DataModel
-{
-    [XmlElement("Id")]
-    public int Id { get; set; }
-    
-    [XmlElement("Name")]
-    public string Name { get; set; }
-    
-    [XmlArray("Items")]
-    [XmlArrayItem("Item")]
-    public List<string> Items { get; set; }
-}
-
-2. Ручная упаковка (для максимальной производительности)
-csharp
-
-private byte[] ConvertXmlToBinary(string xml)
-{
-    using var xmlDoc = XDocument.Parse(xml);
-    using var memoryStream = new MemoryStream();
-    using var writer = new BinaryWriter(memoryStream);
-
-    // Сериализация основных полей
-    var root = xmlDoc.Root!;
-    writer.Write(root.Element("Id")?.Value ?? "0");
-    writer.Write(root.Element("Name")?.Value ?? "");
-    
-    // Сериализация коллекции
-    var items = root.Element("Items")?.Elements("Item");
-    writer.Write(items?.Count() ?? 0);
-    foreach (var item in items ?? Enumerable.Empty<XElement>())
-    {
-        writer.Write(item.Value);
-    }
-
-    return memoryStream.ToArray();
-}
-
-3. Альтернатива с System.Text.Json (для .NET Core+)
-csharp
-
-private byte[] ConvertXmlToBinary(string xml)
-{
-    // XML -> Объект
-    using var xmlDoc = XDocument.Parse(xml);
-    var data = new DataModel
-    {
-        Id = int.Parse(xmlDoc.Root?.Element("Id")?.Value ?? "0"),
-        Name = xmlDoc.Root?.Element("Name")?.Value ?? ""
-    };
-
-    // Объект -> Binary JSON
-    return JsonSerializer.SerializeToUtf8Bytes(data);
-}
-
-Полный пример с обработкой ошибок
-csharp
-
-private byte[] ConvertXmlToBinary(string xml)
-{
-    try
-    {
-        // Валидация XML
-        if (string.IsNullOrWhiteSpace(xml))
-            throw new ArgumentException("Empty XML content");
-
-        using var xmlDoc = XDocument.Parse(xml);
-        
-        // Проверка обязательных полей
-        if (xmlDoc.Root?.Element("Id") == null)
-            throw new InvalidOperationException("Missing required Id field");
-
-        // Основная логика сериализации
-        using var memoryStream = new MemoryStream();
-        using (var writer = new BinaryWriter(memoryStream))
-        {
-            writer.Write(xmlDoc.Root.Element("Id")!.Value);
-            writer.Write(xmlDoc.Root.Element("Name")?.Value ?? "");
-            
-            // Пример обработки коллекции
-            var items = xmlDoc.Root.Element("Items")?.Elements() 
-                ?? Enumerable.Empty<XElement>();
-            
-            writer.Write(items.Count());
-            foreach (var item in items)
-            {
-                writer.Write(item.Value);
-            }
-        }
-
-        return memoryStream.ToArray();
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "XML to binary conversion failed");
-        throw; // или возврат пустого массива
-    }
+  }
 }
