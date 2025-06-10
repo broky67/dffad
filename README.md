@@ -22,6 +22,38 @@
                 throw;
             }
         }
+
+
+                public static bool Serialize(string fileName, object obj, XmlSerializerNamespaces xmlns = null)
+        {
+            // Failed by default
+            bool succeeded = false;
+
+            try
+            {
+                if (obj != null)
+                {
+                    string parentDir = Directory.GetParent(fileName).FullName;
+                    if (!Directory.Exists(parentDir))
+                        Directory.CreateDirectory(parentDir);
+
+                    using (Stream stream = File.Create(fileName))
+                    {
+                        var xs = new XmlSerializer(obj.GetType());
+                        xs.Serialize(stream, obj, xmlns);
+
+                        succeeded = true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // silent ignore
+                PrintInnerEx(ex);
+            }
+
+            return succeeded;
+        }
 вовововов
 вовоовв
 Services/IFileWatcherService.cs
