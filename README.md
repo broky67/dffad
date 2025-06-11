@@ -1,12 +1,20 @@
-    public class ConverterService
-    {
-        private readonly string _xmlFilePath = @"C:\Users\ba-romanov\xmltest\";
-        private ProjectViewModel _projectViewModel;
-        public ConverterService(ProjectViewModel projectViewModel)
-        {
-            _projectViewModel = projectViewModel;
-        }
-        public async Task ConvertXmlToBinAsync(string xmlFilePath, string outputDirectory)
+var project = await Pilot.XmlHelper.DeserializeAsync<DeviceDescription>(fileName);
+            if (project != null)
+            {
+                project.ProjPath = fileName;
+                project._Name = Path.GetFileName(fileName);
+
+                UpdateLatest(fileName);
+
+                //UpdateDevices(project);
+                var updater = new DeviceRefFinder(project);
+                project.Accept(updater);
+            }
+            return project;
+...
+
+
+public async Task ConvertXmlToBinAsync(string xmlFilePath, string outputDirectory)
         {
             try
             {
@@ -14,17 +22,26 @@
                 WaitForFileAvailable(xmlFilePath);
 
                 var xmlContent = await File.ReadAllTextAsync(xmlFilePath);
-                var outputPath = _xmlFilePath + Path.GetFileNameWithoutExtension(xmlFilePath) + ".bin";
+                var filename = Path.GetFileNameWithoutExtension(xmlFilePath);
+                var outputPath = _xmlFilePath + filename + ".bin";
 
 
-                DeviceDescription selectedProject = _projectViewModel.GetSelectedProject();
-
-                var xmlSerializer = new XmlSerializer(selectedProject.GetType());
+                var xmlSerializer = new XmlSerializer(typeof(DeviceDescription));
                 DeviceDescription dataObject;
-                using (var reader = new StringReader(xmlContent))
+
+                using (var reader = new StringReader(xmlContent))           
                 {
-                    dataObject = (DeviceDescription)xmlSerializer.Deserialize(reader);
+                    // instead of 
+                    // dataObject = (DeviceDescription)xmlSerializer.Deserialize(reader);
+                    dataObject = await Pilot.XmlHelper.DeserializeAsync<DeviceDescription>(filename);
+                    dataObject.ProjPath = xmlFilePath;
+                    dataObject._Name = Path.GetFileName(xmlFilePath);
+
+                    var updater = new DeviceRefFinder(dataObject);
+                    dataObject.Accept(updater);
                 }
+
+
 
                 await using (var stream = File.Create(outputPath))
                 {
@@ -36,28 +53,3 @@
                 throw;
             }
         }
-        private void WaitForFileAvailable(string filePath, int timeoutMs = 5000)
-        {
-            var sw = Stopwatch.StartNew();
-            while (sw.ElapsedMilliseconds < timeoutMs)
-            {
-                try
-                {
-                    using (var fs = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.None))
-                    {
-                        return;
-                    }
-                }
-                catch (Exception ex)
-                {
-                }
-            }
-            throw new Exception("time exception");
-        }
-    }
-
-<DeviceDescription xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.ekra.ru/schemas/PlatformDescription-1.0.xsd">
-<Types/>
-<Resources/>
-<ParameterSet/>
-</DeviceDescription>
