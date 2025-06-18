@@ -129,3 +129,30 @@ public class ParameterTemplateSelector : DataTemplateSelector
 2. Редактировать значения прямо в таблице
 3. Гибко управлять видимостью колонки
 4. Легко расширять для других типов параметров
+
+
+
+
+
+
+
+
+
+      <ParameterSet>
+        <ParameterSection>
+          <Name name="local:SpiParameters">Параметры связи по SPI</Name>
+          <Parameter ParameterId="0" type="std:INT">
+            <Default>0</Default>
+            <Name name="local:Id0">Адрес блока на шине</Name>
+          </Parameter>
+          <Parameter ParameterId="5" type="std:INT">
+            <Default>0</Default>
+            <Name name="local:Id5">версия протокола связи по spi ( 0 или 1 )</Name>
+          </Parameter>
+          <Parameter ParameterId="9" type="std:INT">
+            <Default>0</Default>
+            <Name name="local:Id9">Тип протокола связи по spi ( 8bit или 16bit )</Name>
+          </Parameter>
+        </ParameterSection>
+      </ParameterSet>
+    </Connector>
