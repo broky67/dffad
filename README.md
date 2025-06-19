@@ -1,158 +1,139 @@
-Для добавления дополнительного раскрывающегося списка с параметрами (например, для `T_R17xx_Delay` - время срабатывания и возврата) в ваш `DataTreeGrid`, предлагаю следующее решение:
+Способ 2: Загрузка из JSON/XML (если типы хранятся в конфигах)
 
-### 1. Добавление нового DataTemplate для параметров задержки
-В ресурсы UserControl добавьте новые шаблоны:
+Файл DeviceTypes.json:
+json
 
-```xml
-<UserControl.Resources>
-    <!-- ... существующие ресурсы ... -->
-
-    <!-- Шаблон для отображения параметров задержки -->
-    <DataTemplate x:Key="DelayParametersTemplate">
-        <StackPanel Orientation="Horizontal">
-            <TextBlock Text="Активация:" Margin="5,0"/>
-            <TextBlock Text="{Binding Tag.Tag.ActivationDelay}" Width="50"/>
-            <TextBlock Text="мс" Margin="5,0"/>
-            <TextBlock Text="Возврат:" Margin="5,0"/>
-            <TextBlock Text="{Binding Tag.Tag.DeactivationDelay}" Width="50"/>
-            <TextBlock Text="мс"/>
-        </StackPanel>
-    </DataTemplate>
-
-    <!-- Шаблон для редактирования параметров задержки -->
-    <DataTemplate x:Key="DelayParametersEditTemplate">
-        <StackPanel Orientation="Horizontal">
-            <TextBlock Text="Активация:" Margin="5,0"/>
-            <TextBox Text="{Binding Tag.Tag.ActivationDelay}" Width="50"/>
-            <TextBlock Text="мс" Margin="5,0"/>
-            <TextBlock Text="Возврат:" Margin="5,0"/>
-            <TextBox Text="{Binding Tag.Tag.DeactivationDelay}" Width="50"/>
-            <TextBlock Text="мс"/>
-        </StackPanel>
-    </DataTemplate>
-</UserControl.Resources>
-```
-
-### 2. Добавление новой колонки в DataTreeGrid
-Вставьте новую колонку в список колонок:
-
-```xml
-<kivi:DataTreeGrid.Columns>
-    <!-- ... существующие колонки ... -->
-    
-    <DataGridTemplateColumn mvvm:DTGAP.Key="DelayParams" Header="Параметры задержки" Width="250"
-        CellTemplate="{StaticResource DelayParametersTemplate}" 
-        CellEditingTemplate="{StaticResource DelayParametersEditTemplate}"/>
-</kivi:DataTreeGrid.Columns>
-```
-
-### 3. Обновление контекстного меню
-Добавьте пункт для управления видимостью новой колонки:
-
-```xml
-<ContextMenu Tag="{Binding PlacementTarget, RelativeSource={RelativeSource Self}, Converter={StaticResource dtgac}}">
-    <!-- ... существующие пункты меню ... -->
-    <MenuItem IsCheckable="True" Header="Параметры задержки"
-        IsChecked="{Binding Tag.Columns[8].Visibility, Converter={StaticResource vis2bool}, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-</ContextMenu>
-```
-
-### 4. Модификация модели данных
-Добавьте соответствующие свойства в класс параметра:
-
-```csharp
-public class Parameter
 {
-    // ... существующие свойства ...
-    
-    public int ActivationDelay { get; set; }  // Выдержка на срабатывание (мс)
-    public int DeactivationDelay { get; set; } // Выдержка на возврат (мс)
+  "DeviceTypes": [
+    {
+      "TypeName": "T_R17xx_Delay",
+      "Properties": {
+        "ActivationDelay": 100,
+        "DeactivationDelay": 50
+      }
+    }
+  ]
 }
-```
 
-### 5. Условное отображение (опционально)
-Если нужно показывать эту колонку только для определенных типов, можно использовать конвертер:
+Код загрузки:
+csharp
 
-```xml
-<DataGridTemplateColumn.Visibility>
-    <Binding Path="Tag.Tag.type" Converter="{StaticResource DelayParamsVisibilityConverter}"/>
-</DataGridTemplateColumn.Visibility>
-```
+public class DeviceTypeLoader
+{
+    public static List<DeviceDescriptionType> LoadFromFile(string path)
+    {
+        var json = File.ReadAllText(path);
+        return JsonConvert.DeserializeObject<DeviceTypesConfig>(json).DeviceTypes;
+    }
+}
 
-С самим конвертером:
+public class DeviceTypesConfig
+{
+    public List<DeviceDescriptionType> DeviceTypes { get; set; }
+}
 
-```csharp
-public class DelayParamsVisibilityConverter : IValueConverter
+Использование:
+csharp
+
+var types = DeviceTypeLoader.LoadFromFile("DeviceTypes.json");
+var delaySettings = types.FirstOrDefault(t => t.TypeName == "T_R17xx_Delay");
+
+2. Связывание свойств через ValueConverter
+Пример конвертера для сложных свойств
+csharp
+
+[ValueConversion(typeof(Dictionary<string, object>), typeof(string))]
+public class DevicePropertiesConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
-        return value?.ToString() == "T_R17xx_Delay" ? Visibility.Visible : Visibility.Collapsed;
+        if (value is not Dictionary<string, object> props)
+            return string.Empty;
+
+        // Форматируем свойства для отображения (например, в ToolTip)
+        return string.Join(", ", props.Select(p => $"{p.Key}: {p.Value}"));
     }
-    
+
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
     {
         throw new NotImplementedException();
     }
 }
-```
 
-### Альтернативный подход: Использование DataTemplateSelector
-Если параметры разных типов сильно отличаются, можно создать селектор шаблонов:
+Регистрация в XAML:
+xml
 
-```csharp
-public class ParameterTemplateSelector : DataTemplateSelector
+<UserControl.Resources>
+    <local:DevicePropertiesConverter x:Key="DevicePropsConverter"/>
+</UserControl.Resources>
+
+Использование в привязке:
+xml
+
+<!-- Отображение сводки свойств -->
+<TextBlock 
+    Text="{Binding TypeSettings.Properties, Converter={StaticResource DevicePropsConverter}}"
+    ToolTip="{Binding TypeSettings.Properties, Converter={StaticResource DevicePropsConverter}}"/>
+
+3. Полная привязка в TreeView
+xml
+
+<TreeView ItemsSource="{Binding DeviceDescriptions}">
+    <TreeView.ItemTemplate>
+        <HierarchicalDataTemplate ItemsSource="{Binding Parameters}">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding Name}" FontWeight="Bold"/>
+                <TextBlock Text="{Binding TypeSettings.Properties, Converter={StaticResource DevicePropsConverter}}"
+                           Margin="10,0" Foreground="Gray"/>
+            </StackPanel>
+
+            <HierarchicalDataTemplate.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel>
+                        <!-- Основное значение параметра -->
+                        <TextBox Text="{Binding Value}" Margin="5,0"/>
+
+                        <!-- Динамические свойства типа -->
+                        <ItemsControl ItemsSource="{Binding TypeSettings.Properties}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="10,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="150"/>
+                                            <ColumnDefinition Width="100"/>
+                                        </Grid.ColumnDefinitions>
+                                        
+                                        <TextBlock Text="{Binding Key}" Grid.Column="0"/>
+                                        <TextBox Text="{Binding Value}" Grid.Column="1"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </DataTemplate>
+            </HierarchicalDataTemplate.ItemTemplate>
+        </HierarchicalDataTemplate>
+    </TreeView.ItemTemplate>
+</TreeView>
+
+4. Динамическое обновление свойств
+
+Чтобы изменения в Properties сразу применялись:
+
+    Реализуйте INotifyPropertyChanged в DeviceDescriptionType:
+
+csharp
+
+public class DeviceDescriptionType : INotifyPropertyChanged
 {
-    public DataTemplate DelayTemplate { get; set; }
-    public DataTemplate DefaultTemplate { get; set; }
-
-    public override DataTemplate SelectTemplate(object item, DependencyObject container)
+    private Dictionary<string, object> _properties;
+    public Dictionary<string, object> Properties
     {
-        var param = (item as YourItemType)?.Tag?.Tag;
-        if (param?.type == "T_R17xx_Delay")
-            return DelayTemplate;
-        
-        return DefaultTemplate;
+        get => _properties;
+        set { _properties = value; OnPropertyChanged(); }
     }
+
+    public event PropertyChangedEventHandler PropertyChanged;
+    protected void OnPropertyChanged([CallerMemberName] string name = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
-```
-
-И использовать его в XAML:
-
-```xml
-<DataGridTemplateColumn 
-    CellTemplateSelector="{StaticResource ParameterTemplateSelector}"
-    CellEditingTemplateSelector="{StaticResource ParameterTemplateSelector}"/>
-```
-
-Это решение позволит:
-1. Добавить отдельную колонку для параметров задержки
-2. Редактировать значения прямо в таблице
-3. Гибко управлять видимостью колонки
-4. Легко расширять для других типов параметров
-
-
-
-
-
-
-
-
-
-      <ParameterSet>
-        <ParameterSection>
-          <Name name="local:SpiParameters">Параметры связи по SPI</Name>
-          <Parameter ParameterId="0" type="std:INT">
-            <Default>0</Default>
-            <Name name="local:Id0">Адрес блока на шине</Name>
-          </Parameter>
-          <Parameter ParameterId="5" type="std:INT">
-            <Default>0</Default>
-            <Name name="local:Id5">версия протокола связи по spi ( 0 или 1 )</Name>
-          </Parameter>
-          <Parameter ParameterId="9" type="std:INT">
-            <Default>0</Default>
-            <Name name="local:Id9">Тип протокола связи по spi ( 8bit или 16bit )</Name>
-          </Parameter>
-        </ParameterSection>
-      </ParameterSet>
-    </Connector>
