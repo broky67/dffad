@@ -1,4 +1,19 @@
-        public FileWatcherService(ILogger<FileWatcherService> logger)
+private DateTime _lastProcessedTime = DateTime.MinValue;
+private string _lastProcessedFile = null;
+
+private void OnFileChanged(object sender, FileSystemEventArgs e)
+{
+    // Игнорируем событие, если тот же файл изменялся менее 1 секунды назад
+    if (e.Name == _lastProcessedFile && (DateTime.Now - _lastProcessedTime).TotalSeconds < 1)
+        return;
+
+    _lastProcessedTime = DateTime.Now;
+    _lastProcessedFile = e.Name;
+    FileChanged?.Invoke(this, e);
+}
+
+
+public FileWatcherService(ILogger<FileWatcherService> logger)
         {
             _logger = logger;
             _path = hwServerSettings.XmlFolderPath;
