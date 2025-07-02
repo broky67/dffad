@@ -48,7 +48,17 @@ public class FileLogger : ILogger
     // Остальные методы не меняем
 }
 
+[Unit]
+Description=Xml to Bin converter service
 
+[Service]
+Type=notify
+
+ExecStart=/usr/bin/dotnet /media/sf_UbuntuShare/XmlConverter/Pilot.HwTool.Service
+
+Environment=ASPNETCORE_ENVIRONMENT=Production
+[Install]
+WantedBy=multi-user.target
 
 '''''
 .ConfigureLogging(logging =>
