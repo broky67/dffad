@@ -1,140 +1,60 @@
-private DateTime _lastProcessedTime = DateTime.MinValue;
-private string _lastProcessedFile = null;
-
-private void OnFileChanged(object sender, FileSystemEventArgs e)
+public class HwServerSettings
 {
-    // Игнорируем событие, если тот же файл изменялся менее 1 секунды назад
-    if (e.Name == _lastProcessedFile && (DateTime.Now - _lastProcessedTime).TotalSeconds < 1)
-        return;
+    // Корень приложения (где находится .dll)
+    private static readonly string AppRoot = AppContext.BaseDirectory;
 
-    _lastProcessedTime = DateTime.Now;
-    _lastProcessedFile = e.Name;
-    FileChanged?.Invoke(this, e);
+    // Относительные пути (папки создадутся рядом с .dll)
+    public string XmlFolderPath => Path.Combine(AppRoot, "Xml");
+    public string BinFolderPath => Path.Combine(AppRoot, "BinOutput");
+
+    // Синглтон
+    private static readonly Lazy<HwServerSettings> _instance = new Lazy<HwServerSettings>(() => new HwServerSettings());
+    public static HwServerSettings Instance => _instance.Value;
+
+    private HwServerSettings()
+    {
+        // Создаем папки при инициализации
+        Directory.CreateDirectory(XmlFolderPath);
+        Directory.CreateDirectory(BinFolderPath);
+    }
 }
 
 
-public FileWatcherService(ILogger<FileWatcherService> logger)
-        {
-            _logger = logger;
-            _path = hwServerSettings.XmlFolderPath;
-
-            _watcher = new FileSystemWatcher(_path, "*.xml")
-            {
-                NotifyFilter = NotifyFilters.LastWrite,
-                EnableRaisingEvents = true
-            };
-
-            _watcher.Changed += new FileSystemEventHandler(OnFileChanged);
-        }
-
-        private void OnFileChanged(object sender, FileSystemEventArgs e)
-        {
-            FileChanged?.Invoke(this, e);
-           /* _logger.LogInformation($"added: {e.Name}");*/
-        }
 
 
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-        {
-            _logger.LogInformation(RM.Worker_running_at + $" {DateTimeOffset.Now}");
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                _fileWatcher.FileChanged += (sender, e) =>
-                {
-                    try
-                    {
-                        _converterService.ConvertXmlToBin(e.FullPath, _outputPath);
-                        _logger.LogInformation("added ----");
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, RM.Error_processing_file + $" {e.Name}");
-                    }
-                };
-                await Task.Delay(5000);
-            }
-        }
+public class FileLogger : ILogger
+{
+    private readonly string _filePath;
 
-
-public class Service
+    public FileLogger(string filePath)
     {
-        private readonly HwServerSettings hwServerSettings = HwServerSettings.Instance;
-        private readonly ILogger<Service> _logger;
-        public Service(ILogger<Service> logger)
-        {
-            _logger = logger;
-        }
-        public void ConvertXmlToBin(string xmlFilePath, string outputDirectory)
-        {
-            try
-            {
-                var isAvailable = IsFileReady(xmlFilePath);
-                if (isAvailable)
-                {
-                    var filename = Path.GetFileNameWithoutExtension(xmlFilePath);
-                    var outputPath = hwServerSettings.BinFolderPath + filename + ".bin";
-
-                    // Taken from OpenFile HwTool
-                    DeviceDescription dataObject = XmlHelper.Deserialize<DeviceDescription>(xmlFilePath); 
-                    if (dataObject == null)
-                    {
-                        _logger.LogError(RM.Error_deserialize);
-                        throw new InvalidOperationException(RM.Error_deserialize);
-                    }
-
-                    dataObject.ProjPath = xmlFilePath;
-                    dataObject._Name = Path.GetFileName(xmlFilePath);
-                    var updater = new DeviceRefFinder(dataObject);
-                    dataObject.Accept(updater);
-
-                    // Save Binary
-                    var bytesArr = new BinaryTarget(dataObject).Export_BinaryTable();
-                    if (bytesArr == null)
-                    {
-                        _logger.LogError(RM.Error_binary_is_empty);
-                        throw new NullReferenceException(RM.Error_binary_is_empty);
-                    }
-                    File.WriteAllBytes(outputPath, bytesArr);
-               /* _logger.LogInformation($"added---");*/
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(RM.Error_couldnt_convert, ex);
-                throw new InvalidOperationException(RM.Error_couldnt_convert, ex);
-            }       
-        }
-        public bool IsFileReady(string filePath)
-        {
-            try
-            {
-                using (var stream = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.None))
-                {
-                    if (stream.Length > 0)
-                    {
-                        return true;
-                    }
-                    else
-                    {
-                        return false;
-                    }
-                }
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        /*public bool WaitForFileAvailable(string filePath)
-        {
-            while (true)
-            {
-                if (IsFileReady(filePath))
-                {
-                    return true;
-                }
-                Thread.Sleep(hwServerSettings.FileCheckInterval);
-            }
-        }*/
+        _filePath = filePath;
     }
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception exception,
+        Func<TState, Exception, string> formatter)
+    {
+        var message = formatter(state, exception);
+        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+        var logMessage = $"[{timestamp}] [{logLevel}] {message}{Environment.NewLine}";
+
+        File.AppendAllText(_filePath, logMessage);
+    }
+
+    // Остальные методы не меняем
+}
+
+
+
+'''''
+.ConfigureLogging(logging =>
+{
+    logging.AddConsole(options =>
+    {
+        options.TimestampFormat = "[yyyy-MM-dd HH:mm:ss] ";
+    });
+})
