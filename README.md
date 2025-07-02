@@ -47,7 +47,18 @@ public class FileLogger : ILogger
 
     // Остальные методы не меняем
 }
-
+private static readonly string AppRoot = AppContext.BaseDirectory;
+        public string XmlFolderPath => Path.Combine(AppRoot, "Xml\\");
+        public string BinFolderPath => Path.Combine(AppRoot, "BinOutput\\");
+        public string LoggerFolderPath => Path.Combine(AppRoot, "LoggerOutput\\");
+        public TimeSpan FileDebounceInterval;
+        private HwServerSettings() 
+        {
+            Directory.CreateDirectory(XmlFolderPath);
+            Directory.CreateDirectory(BinFolderPath);
+            Directory.CreateDirectory(LoggerFolderPath);
+            FileDebounceInterval = TimeSpan.FromSeconds(2);
+        }
 [Unit]
 Description=Xml to Bin converter service
 
