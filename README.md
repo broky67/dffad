@@ -1,81 +1,23 @@
-public class HwServerSettings
-{
-    // Корень приложения (где находится .dll)
-    private static readonly string AppRoot = AppContext.BaseDirectory;
-
-    // Относительные пути (папки создадутся рядом с .dll)
-    public string XmlFolderPath => Path.Combine(AppRoot, "Xml");
-    public string BinFolderPath => Path.Combine(AppRoot, "BinOutput");
-
-    // Синглтон
-    private static readonly Lazy<HwServerSettings> _instance = new Lazy<HwServerSettings>(() => new HwServerSettings());
-    public static HwServerSettings Instance => _instance.Value;
-
-    private HwServerSettings()
-    {
-        // Создаем папки при инициализации
-        Directory.CreateDirectory(XmlFolderPath);
-        Directory.CreateDirectory(BinFolderPath);
-    }
-}
-
-
-
-
-public class FileLogger : ILogger
-{
-    private readonly string _filePath;
-
-    public FileLogger(string filePath)
-    {
-        _filePath = filePath;
-    }
-
-    public void Log<TState>(
-        LogLevel logLevel,
-        EventId eventId,
-        TState state,
-        Exception exception,
-        Func<TState, Exception, string> formatter)
-    {
-        var message = formatter(state, exception);
-        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-        var logMessage = $"[{timestamp}] [{logLevel}] {message}{Environment.NewLine}";
-
-        File.AppendAllText(_filePath, logMessage);
-    }
-
-    // Остальные методы не меняем
-}
-private static readonly string AppRoot = AppContext.BaseDirectory;
-        public string XmlFolderPath => Path.Combine(AppRoot, "Xml\\");
-        public string BinFolderPath => Path.Combine(AppRoot, "BinOutput\\");
-        public string LoggerFolderPath => Path.Combine(AppRoot, "LoggerOutput\\");
-        public TimeSpan FileDebounceInterval;
-        private HwServerSettings() 
-        {
-            Directory.CreateDirectory(XmlFolderPath);
-            Directory.CreateDirectory(BinFolderPath);
-            Directory.CreateDirectory(LoggerFolderPath);
-            FileDebounceInterval = TimeSpan.FromSeconds(2);
-        }
 [Unit]
 Description=Xml to Bin converter service
+After=network.target
 
 [Service]
 Type=notify
-
-ExecStart=/usr/bin/dotnet /media/sf_UbuntuShare/XmlConverter/Pilot.HwTool.Service
-
+WorkingDirectory=/media/sf_UbuntuShare/XmlConverter/
+ExecStart=/usr/bin/dotnet /media/sf_UbuntuShare/XmlConverter/Pilot.HwTool.Service.dll
+Restart=always
+RestartSec=10
 Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_ROOT=/usr/share/dotnet
+
+# Права пользователя (замените `your_user` на актуальный)
+User=your_user
+Group=your_user
+
+# Важно для доступа к shared-папкам
+PrivateTmp=false
+ProtectSystem=false
+
 [Install]
 WantedBy=multi-user.target
-
-'''''
-.ConfigureLogging(logging =>
-{
-    logging.AddConsole(options =>
-    {
-        options.TimestampFormat = "[yyyy-MM-dd HH:mm:ss] ";
-    });
-})
