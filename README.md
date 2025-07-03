@@ -1,130 +1,146 @@
-Если сервис на **Ubuntu** не реагирует на новые файлы в папке `Xml`, но в **Windows (Visual Studio)** всё работает, проблема, скорее всего, связана с одной из следующих причин:
+Ошибка при указании `/usr/bin/dotnet` в systemd-юните обычно связана с неправильным форматом пути или проблемами окружения. Давайте исправим конфигурацию и проверим все возможные причины.
 
 ---
 
-## **1. Проверка `FileSystemWatcher` в Linux**
-### **Основные проблемы `FileSystemWatcher` в Linux:**
-- **Не поддерживает `NotifyFilters.LastWrite`**  
-  В Linux события изменения файла (`Changed`) могут не срабатывать так же, как в Windows.  
-  **Решение:** Используйте `NotifyFilters.FileName | NotifyFilters.CreationTime`.
+## **1. Правильная настройка systemd-юнита**
+### **Исправленный конфиг (`/etc/systemd/system/xml-converter.service`)**  
+Замените содержимое файла на:
 
-- **Требует повышенных прав**  
-  Сервис должен иметь доступ к папке `/Xml/`.  
-  **Решение:**  
-  ```bash
-  sudo chmod -R 777 /путь/к/папке/Xml  # Временно для теста
-  ```
+```ini
+[Unit]
+Description=XML to Binary Converter Service
+After=network.target
 
-### **Исправленный код `FileWatcherService`:**
-```csharp
-_watcher = new FileSystemWatcher(_path, "*.xml")
-{
-    NotifyFilter = NotifyFilters.FileName | NotifyFilters.CreationTime, // Для Linux
-    EnableRaisingEvents = true
-};
+[Service]
+Type=notify
+WorkingDirectory=/media/sf_UbuntuShare/XmlConverter/
+ExecStart=/usr/bin/dotnet /media/sf_UbuntuShare/XmlConverter/Pilot.HwTool.Service.dll
+Restart=always
+RestartSec=10
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_ROOT=/usr/share/dotnet
+
+# Укажите пользователя с доступом к папке (замените `your_user`)
+User=your_user
+Group=your_user
+
+# Отключаем изоляцию для доступа к shared-папкам
+PrivateTmp=false
+ProtectSystem=false
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### **Ключевые моменты:**
+1. **`WorkingDirectory`**  
+   Должен указывать на каталог, где лежит `.dll` (иначе относительные пути сломаются).
+
+2. **`ExecStart`**  
+   - Полный путь к `dotnet` (`/usr/bin/dotnet`).  
+   - **Полный путь к `.dll`** (не к каталогу!).  
+
+3. **`User` и `Group`**  
+   Замените `your_user` на реального пользователя (команда `whoami`).
+
+---
+
+## **2. Проверка окружения**
+### **A. Где находится dotnet?**
+Убедитесь, что `dotnet` доступен по указанному пути:
+```bash
+which dotnet
+```
+Если вывод не `/usr/bin/dotnet`, исправьте `ExecStart` в юните.
+
+### **B. Проверьте переменные окружения**
+Добавьте в юнит:
+```ini
+Environment=PATH=/usr/bin:/usr/local/bin:/usr/sbin
+Environment=DOTNET_ROOT=/usr/share/dotnet
+```
+
+### **C. Права на файлы**
+Дайте права на папку и `.dll`:
+```bash
+sudo chown -R your_user:your_user /media/sf_UbuntuShare/XmlConverter
+sudo chmod -R 755 /media/sf_UbuntuShare/XmlConverter
 ```
 
 ---
 
-## **2. Проверка прав доступа**
-Убедитесь, что:
-1. **Сервис имеет права на чтение/запись**:
+## **3. Запуск и отладка**
+1. **Перезагрузите systemd**:
    ```bash
-   sudo chown -R $USER:$USER /путь/к/папке/Xml
-   sudo chown -R $USER:$USER /путь/к/папке/BinOutput
+   sudo systemctl daemon-reload
    ```
 
-2. **Папки существуют**:
+2. **Запустите сервис**:
    ```bash
-   ls -la /путь/к/папке/Xml
-   ls -la /путь/к/папке/BinOutput
+   sudo systemctl start xml-converter
    ```
+
+3. **Проверьте статус**:
+   ```bash
+   sudo systemctl status xml-converter
+   ```
+   Если видите **"Failed"**, выполните:
+   ```bash
+   journalctl -u xml-converter --no-pager -n 50
+   ```
+
+4. **Запустите вручную** (для теста):
+   ```bash
+   cd /media/sf_UbuntuShare/XmlConverter/
+   /usr/bin/dotnet Pilot.HwTool.Service.dll
+   ```
+   - Если работает — проблема в systemd.  
+   - Если нет — проблема в коде/зависимостях.
 
 ---
 
-## **3. Логирование ошибок**
-Добавьте **детальное логирование** в `OnFileChanged` и `ConvertXmlToBin`:
-```csharp
-private void OnFileChanged(object sender, FileSystemEventArgs e)
+## **4. Частые ошибки и решения**
+| Ошибка                          | Решение                                                                 |
+|----------------------------------|-------------------------------------------------------------------------|
+| `Failed to start ... code=exited` | Проверьте `journalctl -u xml-converter` на наличие ошибок.             |
+| `Permission denied`              | Дайте права на папку (`chmod 755`) и укажите `User=` в юните.          |
+| `Dotnet not found`               | Укажите полный путь к `dotnet` (`which dotnet`).                       |
+| `DLL not found`                  | Проверьте `WorkingDirectory` и путь в `ExecStart`.                     |
+
+---
+
+## **5. Дополнительные проверки**
+### **A. Зависимости .NET**
+Убедитесь, что установлены:
+```bash
+sudo apt install libunwind8 libssl3
+```
+
+### **B. Логирование в файл**
+Добавьте в `appsettings.Production.json`:
+```json
 {
-    try
-    {
-        _logger.LogInformation($"Обнаружен файл: {e.FullPath}, имя: {e.Name}, тип: {e.ChangeType}");
-        FileChanged?.Invoke(this, e);
+  "Logging": {
+    "LogLevel": {
+      "Default": "Debug",
+      "Microsoft": "Warning"
+    },
+    "File": {
+      "Path": "/var/log/xml-converter.log",
+      "Append": true
     }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Ошибка в OnFileChanged");
-    }
+  }
 }
 ```
 
-Проверьте логи:
+---
+
+## **Итог**
+1. Исправьте `ExecStart` в systemd-юните.  
+2. Проверьте права и переменные окружения.  
+3. Запустите вручную для локализации проблемы.  
+
+Если после всех шагов сервис не работает — приведите **полный вывод**:  
 ```bash
-journalctl -u ваш-сервис -f  # В реальном времени
+journalctl -u xml-converter --no-pager -n 50
 ```
-
----
-
-## **4. Проверка работоспособности сервиса**
-1. **Запустите сервис вручную** (без systemd):
-   ```bash
-   cd /путь/к/dll
-   dotnet Pilot.HwTool.Service.dll
-   ```
-   - Если работает — проблема в **systemd**.  
-   - Если нет — проблема в **коде/правах**.
-
-2. **Тест `FileSystemWatcher`**:
-   ```csharp
-   // Временно добавьте в начало сервиса
-   _logger.LogInformation($"Наблюдаю за папкой: {_path}, существует: {Directory.Exists(_path)}");
-   ```
-
----
-
-## **5. Проблемы с systemd**
-Если сервис работает вручную, но не через `systemd`:
-1. **Измените `User` в unit-файле**:
-   ```ini
-   [Service]
-   User=ваш_пользователь  # Например, ubuntu
-   Group=ваш_пользователь
-   ```
-2. **Добавьте переменные среды**:
-   ```ini
-   Environment=DOTNET_ROOT=/usr/share/dotnet
-   Environment=ASPNETCORE_ENVIRONMENT=Development
-   ```
-
-3. **Перезапустите сервис**:
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl restart ваш-сервис
-   ```
-
----
-
-## **6. Проверка зависимостей**
-Убедитесь, что в Linux установлены:
-- **.NET Runtime**:
-  ```bash
-  dotnet --list-runtimes
-  ```
-- **Библиотеки для работы с файлами**:
-  ```bash
-  sudo apt install libunwind8 libssl3
-  ```
-
----
-
-## **Итоговый чеклист**
-| Проблема                  | Решение                                                                 |
-|---------------------------|-------------------------------------------------------------------------|
-| `FileSystemWatcher` в Linux | Используйте `NotifyFilters.FileName`                                    |
-| Права на папки            | `chmod -R 777 /Xml/` (временно для теста)                              |
-| Логирование               | Добавьте логи в `OnFileChanged` и `ConvertXmlToBin`                    |
-| Запуск вручную            | Проверьте через `dotnet Pilot.HwTool.Service.dll`                      |
-| systemd                   | Укажите `User`, `Group` и `WorkingDirectory`                           |
-
-Если после всех проверок сервис всё равно не работает — приведите **логи из `journalctl`** и **текущую версию кода**.
