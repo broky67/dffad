@@ -144,3 +144,15 @@ sudo apt install libunwind8 libssl3
 ```bash
 journalctl -u xml-converter --no-pager -n 50
 ```
+
+
+Jul 03 16:44:11 ba-romanov-VirtualBox dotnet[13645]: No usable version of libssl was found
+Jul 03 16:44:12 ba-romanov-VirtualBox systemd[1]: converter.service: Main process exited, code=dumped, status=6/ABRT
+Jul 03 16:44:12 ba-romanov-VirtualBox systemd[1]: converter.service: Failed with result 'core-dump'.
+Jul 03 16:51:03 ba-romanov-VirtualBox systemd[1]: Starting converter.service - Xml to Bin converter service...
+Jul 03 16:51:03 ba-romanov-VirtualBox dotnet[14007]: Pilot.HwTool.Service.Worker[0] Worker service time running 7/3/2025 4:51:03PM +03:00
+Jul 03 16:51:03 ba-romanov-VirtualBox dotnet[14007]: Microsoft.Hosting.Lifetime[0] Application started. Hosting environment: Production; Content root path: /home/ba-romanov/Serv/publish
+Jul 03 16:51:03 ba-romanov-VirtualBox systemd[1]: Started converter.service - Xml to Bin converter service.
+Jul 03 16:51:14 ba-romanov-VirtualBox dotnet[14007]: No usable version of libssl was found
+Jul 03 16:51:15 ba-romanov-VirtualBox systemd[1]: converter.service: Main process exited, code=dumped, status=6/ABRT
+Jul 03 16:51:15 ba-romanov-VirtualBox systemd[1]: converter.service: Failed with result 'core-dump'.
