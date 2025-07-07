@@ -1,158 +1,204 @@
-Ошибка при указании `/usr/bin/dotnet` в systemd-юните обычно связана с неправильным форматом пути или проблемами окружения. Давайте исправим конфигурацию и проверим все возможные причины.
+/*  DeviceDescriptionTypes: 
+                componentField = StructedType
+        public partial class StructdefType : TypedefType
+    {
 
----
+        private TypedefTypeComponentCollection componentField;
 
-## **1. Правильная настройка systemd-юнита**
-### **Исправленный конфиг (`/etc/systemd/system/xml-converter.service`)**  
-Замените содержимое файла на:
+        private string iecTypeField;
 
-```ini
-[Unit]
-Description=XML to Binary Converter Service
-After=network.target
+        //private string iecTypeLibField;
 
-[Service]
-Type=notify
-WorkingDirectory=/media/sf_UbuntuShare/XmlConverter/
-ExecStart=/usr/bin/dotnet /media/sf_UbuntuShare/XmlConverter/Pilot.HwTool.Service.dll
-Restart=always
-RestartSec=10
-Environment=ASPNETCORE_ENVIRONMENT=Production
-Environment=DOTNET_ROOT=/usr/share/dotnet
+        public StructdefType()
+        {
+            componentField = new TypedefTypeComponentCollection(this);
+        }
 
-# Укажите пользователя с доступом к папке (замените `your_user`)
-User=your_user
-Group=your_user
+        /// <remarks/>
+        [XmlElement("Component")]
+        public TypedefTypeComponentCollection Component
+        {
+            get
+            {
+                return this.componentField;
+            }
+            set
+            {
+                this.componentField = value;
+                if (componentField != null)
+                    componentField._Parent = this;
+                this.RaisePropertyChanged("Component");
+            }
+        }
 
-# Отключаем изоляцию для доступа к shared-папкам
-PrivateTmp=false
-ProtectSystem=false
+        /// <remarks/>
+        [XmlAttribute()]
+        public string iecType
+        {
+            get
+            {
+                return this.iecTypeField;
+            }
+            set
+            {
+                this.iecTypeField = value;
+                this.RaisePropertyChanged("iecType");
+            }
+        }
 
-[Install]
-WantedBy=multi-user.target
-```
+        ///// <remarks/>
+        //[XmlAttribute()]
+        //public string iecTypeLib
+        //{
+        //    get
+        //    {
+        //        return this.iecTypeLibField;
+        //    }
+        //    set
+        //    {
+        //        this.iecTypeLibField = value;
+        //        this.RaisePropertyChanged("iecTypeLib");
+        //    }
+        //}
 
-### **Ключевые моменты:**
-1. **`WorkingDirectory`**  
-   Должен указывать на каталог, где лежит `.dll` (иначе относительные пути сломаются).
-
-2. **`ExecStart`**  
-   - Полный путь к `dotnet` (`/usr/bin/dotnet`).  
-   - **Полный путь к `.dll`** (не к каталогу!).  
-
-3. **`User` и `Group`**  
-   Замените `your_user` на реального пользователя (команда `whoami`).
-
----
-
-## **2. Проверка окружения**
-### **A. Где находится dotnet?**
-Убедитесь, что `dotnet` доступен по указанному пути:
-```bash
-which dotnet
-```
-Если вывод не `/usr/bin/dotnet`, исправьте `ExecStart` в юните.
-
-### **B. Проверьте переменные окружения**
-Добавьте в юнит:
-```ini
-Environment=PATH=/usr/bin:/usr/local/bin:/usr/sbin
-Environment=DOTNET_ROOT=/usr/share/dotnet
-```
-
-### **C. Права на файлы**
-Дайте права на папку и `.dll`:
-```bash
-sudo chown -R your_user:your_user /media/sf_UbuntuShare/XmlConverter
-sudo chmod -R 755 /media/sf_UbuntuShare/XmlConverter
-```
-
----
-
-## **3. Запуск и отладка**
-1. **Перезагрузите systemd**:
-   ```bash
-   sudo systemctl daemon-reload
-   ```
-
-2. **Запустите сервис**:
-   ```bash
-   sudo systemctl start xml-converter
-   ```
-
-3. **Проверьте статус**:
-   ```bash
-   sudo systemctl status xml-converter
-   ```
-   Если видите **"Failed"**, выполните:
-   ```bash
-   journalctl -u xml-converter --no-pager -n 50
-   ```
-
-4. **Запустите вручную** (для теста):
-   ```bash
-   cd /media/sf_UbuntuShare/XmlConverter/
-   /usr/bin/dotnet Pilot.HwTool.Service.dll
-   ```
-   - Если работает — проблема в systemd.  
-   - Если нет — проблема в коде/зависимостях.
-
----
-
-## **4. Частые ошибки и решения**
-| Ошибка                          | Решение                                                                 |
-|----------------------------------|-------------------------------------------------------------------------|
-| `Failed to start ... code=exited` | Проверьте `journalctl -u xml-converter` на наличие ошибок.             |
-| `Permission denied`              | Дайте права на папку (`chmod 755`) и укажите `User=` в юните.          |
-| `Dotnet not found`               | Укажите полный путь к `dotnet` (`which dotnet`).                       |
-| `DLL not found`                  | Проверьте `WorkingDirectory` и путь в `ExecStart`.                     |
-
----
-
-## **5. Дополнительные проверки**
-### **A. Зависимости .NET**
-Убедитесь, что установлены:
-```bash
-sudo apt install libunwind8 libssl3
-```
-
-### **B. Логирование в файл**
-Добавьте в `appsettings.Production.json`:
-```json
-{
-  "Logging": {
-    "LogLevel": {
-      "Default": "Debug",
-      "Microsoft": "Warning"
-    },
-    "File": {
-      "Path": "/var/log/xml-converter.log",
-      "Append": true
+        public override ItemsChoiceType Kind => ItemsChoiceType.StructType;
     }
-  }
-}
-```
-
----
-
-## **Итог**
-1. Исправьте `ExecStart` в systemd-юните.  
-2. Проверьте права и переменные окружения.  
-3. Запустите вручную для локализации проблемы.  
-
-Если после всех шагов сервис не работает — приведите **полный вывод**:  
-```bash
-journalctl -u xml-converter --no-pager -n 50
-```
 
 
-Jul 03 16:44:11 ba-romanov-VirtualBox dotnet[13645]: No usable version of libssl was found
-Jul 03 16:44:12 ba-romanov-VirtualBox systemd[1]: converter.service: Main process exited, code=dumped, status=6/ABRT
-Jul 03 16:44:12 ba-romanov-VirtualBox systemd[1]: converter.service: Failed with result 'core-dump'.
-Jul 03 16:51:03 ba-romanov-VirtualBox systemd[1]: Starting converter.service - Xml to Bin converter service...
-Jul 03 16:51:03 ba-romanov-VirtualBox dotnet[14007]: Pilot.HwTool.Service.Worker[0] Worker service time running 7/3/2025 4:51:03PM +03:00
-Jul 03 16:51:03 ba-romanov-VirtualBox dotnet[14007]: Microsoft.Hosting.Lifetime[0] Application started. Hosting environment: Production; Content root path: /home/ba-romanov/Serv/publish
-Jul 03 16:51:03 ba-romanov-VirtualBox systemd[1]: Started converter.service - Xml to Bin converter service.
-Jul 03 16:51:14 ba-romanov-VirtualBox dotnet[14007]: No usable version of libssl was found
-Jul 03 16:51:15 ba-romanov-VirtualBox systemd[1]: converter.service: Main process exited, code=dumped, status=6/ABRT
-Jul 03 16:51:15 ba-romanov-VirtualBox systemd[1]: converter.service: Failed with result 'core-dump'.
+
+
+                
+            DeviceDescriprion:
+                parameterSectionType
+                    else if (node is ParameterSectionType sectionType)
+            {
+                var sectionTypeName = (sectionType.Name == null) ? sectionType._Name : sectionType.Name.ToString();
+                yield return new EditablePropertyItemModel(sectionType)
+                {
+                    IndentLevel = indentLevel,
+                    //IsEditableValue = isEditableValue,
+                    //IsEditableName = isEditableName,
+                    //Name = sectionTypeName,
+                    GetName = tag => { return (sectionType.Name == null) ? sectionType._Name : sectionType.Name.ToString(); },
+                    SetName = (tag, value) => { sectionType.Name = (StringRefType)value; },
+                };
+
+                foreach (var item in sectionType.Items)
+                {
+                    foreach (var pm in GenerateItems(item, indentLevel + 1))
+                        yield return pm;
+                }
+            }
+            else if (node is ParameterType parameterType)
+            {
+                //var pm = new ParameterTypePropertyItemModel(parameterType)
+                var pm = new EditablePropertyItemModel(parameterType)
+                {
+                    IndentLevel = indentLevel,
+                    //IsEditableValue = isEditableValue,
+                    //IsEditableName = isEditableName,
+                    Name = parameterType.Name.ToString(),
+                    SetName = (tag, value) => { parameterType.Name = (StringRefType)value; },
+                    
+                };
+                yield return pm;
+            }
+
+
+
+        public class EditablePropertyItemModel : PropertyItemModel
+    {
+        public EditablePropertyItemModel(object tag)
+            : base(tag)
+        {
+        }
+
+        public override string Name
+        {
+            get { return GetName != null ? GetName(Tag) : base.Name; }
+            set
+            {
+                if (SetName != null)
+                    SetName(Tag, value);
+                base.Name = value;
+            }
+        }
+
+        public Func<object, string> GetName;
+        public Action<object, string> SetName;
+    }
+
+
+                public void UpdateItems(_DeviceDescriptionNode node)
+        {
+            if (Items != null)
+            {
+                Items.Clear();
+                Items = null;
+            }
+
+            if (node != null)
+            {
+                var items = GenerateItems(node, 0);
+                Items = new PropertyItemCollection(items);
+                if (Items.Count <= 1)
+                    Items.Add(new PropertyItemModel(null)); // add a empty row last for selection purposes
+            }
+        }
+
+
+
+
+        DeviceDescriptionTypes:
+        protected void RaisePropertyChanged([CallerMemberName] string propertyName = "")
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+
+                private void MakeSingleSelection(ItemInfo info)
+        {
+            var data = info.Item;
+            var item = info.Container;
+
+            #region Manage SelectedItems
+            
+            foreach (var info2 in _selectedInfos.ToList())
+            {
+                if (info2 != info)
+                {
+                    info2.Container.IsSelected = false;
+
+                    // sync remove
+                    _selectedInfos.Remove(info2);
+                    SelectedItems.Remove(info2.Item);
+                }
+            }
+
+            if (!_selectedInfos.Contains(info))
+            {
+                info.Container.IsSelected = true;
+
+                // sync add
+                _selectedInfos.Add(info);
+                SelectedItems.Add(info.Item);
+            } 
+
+            #endregion
+
+            #region Manage SelectedItem
+
+            var oldValue = SelectedItem;
+            var newValue = info.Item;
+
+            if (oldValue != newValue)
+            {
+                SetSelectedItem(newValue);
+                //_selectedContainer = info.Container;
+                //SelectedItem = newValue;
+                OnSelectedItemChanged(oldValue, newValue);
+            } 
+
+            #endregion
+        }
+         */
