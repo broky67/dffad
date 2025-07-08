@@ -1,204 +1,172 @@
-/*  DeviceDescriptionTypes: 
-                componentField = StructedType
-        public partial class StructdefType : TypedefType
+Чтобы добавить `componentField` в `DeviceDescription` и правильно его отобразить, нужно выполнить несколько шагов. Основная проблема в том, что компоненты не отображаются, хотя они есть в `DeviceDescriptionTypes`. Вот решение:
+
+### 1. Добавление Component в DeviceDescription
+Модифицируем класс `DeviceDescription` (или его базовый класс), чтобы включить поддержку компонентов:
+
+```csharp
+public partial class DeviceDescription : _DeviceDescriptionNode
+{
+    private TypedefTypeComponentCollection componentField;
+
+    public DeviceDescription()
     {
-
-        private TypedefTypeComponentCollection componentField;
-
-        private string iecTypeField;
-
-        //private string iecTypeLibField;
-
-        public StructdefType()
-        {
-            componentField = new TypedefTypeComponentCollection(this);
-        }
-
-        /// <remarks/>
-        [XmlElement("Component")]
-        public TypedefTypeComponentCollection Component
-        {
-            get
-            {
-                return this.componentField;
-            }
-            set
-            {
-                this.componentField = value;
-                if (componentField != null)
-                    componentField._Parent = this;
-                this.RaisePropertyChanged("Component");
-            }
-        }
-
-        /// <remarks/>
-        [XmlAttribute()]
-        public string iecType
-        {
-            get
-            {
-                return this.iecTypeField;
-            }
-            set
-            {
-                this.iecTypeField = value;
-                this.RaisePropertyChanged("iecType");
-            }
-        }
-
-        ///// <remarks/>
-        //[XmlAttribute()]
-        //public string iecTypeLib
-        //{
-        //    get
-        //    {
-        //        return this.iecTypeLibField;
-        //    }
-        //    set
-        //    {
-        //        this.iecTypeLibField = value;
-        //        this.RaisePropertyChanged("iecTypeLib");
-        //    }
-        //}
-
-        public override ItemsChoiceType Kind => ItemsChoiceType.StructType;
+        componentField = new TypedefTypeComponentCollection(this); // Инициализация
     }
 
-
-
-
-                
-            DeviceDescriprion:
-                parameterSectionType
-                    else if (node is ParameterSectionType sectionType)
-            {
-                var sectionTypeName = (sectionType.Name == null) ? sectionType._Name : sectionType.Name.ToString();
-                yield return new EditablePropertyItemModel(sectionType)
-                {
-                    IndentLevel = indentLevel,
-                    //IsEditableValue = isEditableValue,
-                    //IsEditableName = isEditableName,
-                    //Name = sectionTypeName,
-                    GetName = tag => { return (sectionType.Name == null) ? sectionType._Name : sectionType.Name.ToString(); },
-                    SetName = (tag, value) => { sectionType.Name = (StringRefType)value; },
-                };
-
-                foreach (var item in sectionType.Items)
-                {
-                    foreach (var pm in GenerateItems(item, indentLevel + 1))
-                        yield return pm;
-                }
-            }
-            else if (node is ParameterType parameterType)
-            {
-                //var pm = new ParameterTypePropertyItemModel(parameterType)
-                var pm = new EditablePropertyItemModel(parameterType)
-                {
-                    IndentLevel = indentLevel,
-                    //IsEditableValue = isEditableValue,
-                    //IsEditableName = isEditableName,
-                    Name = parameterType.Name.ToString(),
-                    SetName = (tag, value) => { parameterType.Name = (StringRefType)value; },
-                    
-                };
-                yield return pm;
-            }
-
-
-
-        public class EditablePropertyItemModel : PropertyItemModel
+    [XmlElement("Component")]
+    public TypedefTypeComponentCollection Component
     {
-        public EditablePropertyItemModel(object tag)
-            : base(tag)
+        get => componentField;
+        set
         {
-        }
-
-        public override string Name
-        {
-            get { return GetName != null ? GetName(Tag) : base.Name; }
-            set
-            {
-                if (SetName != null)
-                    SetName(Tag, value);
-                base.Name = value;
-            }
-        }
-
-        public Func<object, string> GetName;
-        public Action<object, string> SetName;
-    }
-
-
-                public void UpdateItems(_DeviceDescriptionNode node)
-        {
-            if (Items != null)
-            {
-                Items.Clear();
-                Items = null;
-            }
-
-            if (node != null)
-            {
-                var items = GenerateItems(node, 0);
-                Items = new PropertyItemCollection(items);
-                if (Items.Count <= 1)
-                    Items.Add(new PropertyItemModel(null)); // add a empty row last for selection purposes
-            }
-        }
-
-
-
-
-        DeviceDescriptionTypes:
-        protected void RaisePropertyChanged([CallerMemberName] string propertyName = "")
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
-
-
-                private void MakeSingleSelection(ItemInfo info)
-        {
-            var data = info.Item;
-            var item = info.Container;
-
-            #region Manage SelectedItems
+            if (componentField == value) return;
             
-            foreach (var info2 in _selectedInfos.ToList())
+            componentField = value;
+            if (componentField != null)
             {
-                if (info2 != info)
-                {
-                    info2.Container.IsSelected = false;
-
-                    // sync remove
-                    _selectedInfos.Remove(info2);
-                    SelectedItems.Remove(info2.Item);
-                }
+                componentField._Parent = this;
+                Debug.WriteLine($"Components loaded: {componentField.Count}");
             }
-
-            if (!_selectedInfos.Contains(info))
-            {
-                info.Container.IsSelected = true;
-
-                // sync add
-                _selectedInfos.Add(info);
-                SelectedItems.Add(info.Item);
-            } 
-
-            #endregion
-
-            #region Manage SelectedItem
-
-            var oldValue = SelectedItem;
-            var newValue = info.Item;
-
-            if (oldValue != newValue)
-            {
-                SetSelectedItem(newValue);
-                //_selectedContainer = info.Container;
-                //SelectedItem = newValue;
-                OnSelectedItemChanged(oldValue, newValue);
-            } 
-
-            #endregion
+            RaisePropertyChanged(nameof(Component));
         }
-         */
+    }
+}
+```
+
+### 2. Модификация генерации элементов
+Обновите метод `GenerateItems()`, чтобы он обрабатывал компоненты:
+
+```csharp
+private IEnumerable<PropertyItemModel> GenerateItems(_DeviceDescriptionNode node, int indentLevel)
+{
+    if (node is ParameterSectionType sectionType)
+    {
+        // ... существующий код для sectionType ...
+
+        // Добавляем обработку компонентов
+        if (sectionType.Component != null && sectionType.Component.Count > 0)
+        {
+            foreach (var component in sectionType.Component)
+            {
+                yield return new EditablePropertyItemModel(component)
+                {
+                    IndentLevel = indentLevel + 1,
+                    GetName = tag => ((TypedefTypeComponent)tag).Name.ToString(),
+                    SetName = (tag, value) => ((TypedefTypeComponent)tag).Name = (StringRefType)value
+                };
+            }
+        }
+    }
+    else if (node is ParameterType parameterType)
+    {
+        // ... существующий код для parameterType ...
+    }
+    // Добавляем обработку компонентов для DeviceDescription
+    else if (node is DeviceDescription deviceDesc && deviceDesc.Component != null)
+    {
+        foreach (var component in deviceDesc.Component)
+        {
+            yield return new EditablePropertyItemModel(component)
+            {
+                IndentLevel = indentLevel,
+                GetName = tag => ((TypedefTypeComponent)tag).Name.ToString(),
+                SetName = (tag, value) => ((TypedefTypeComponent)tag).Name = (StringRefType)value
+            };
+        }
+    }
+}
+```
+
+### 3. Проверка загрузки данных
+Убедитесь, что XML содержит компоненты для DeviceDescription:
+
+```xml
+<DeviceDescription>
+    <Component>
+        <TypedefTypeComponent Name="ActivationDelay" Value="100"/>
+        <TypedefTypeComponent Name="DeactivationDelay" Value="50"/>
+    </Component>
+    <!-- ... остальные элементы ... -->
+</DeviceDescription>
+```
+
+### 4. Обновление UpdateItems
+Модифицируйте метод `UpdateItems()` для правильной обработки компонентов:
+
+```csharp
+public void UpdateItems(_DeviceDescriptionNode node)
+{
+    if (Items != null)
+    {
+        Items.Clear();
+        Items = null;
+    }
+
+    if (node != null)
+    {
+        var items = GenerateItems(node, 0).ToList();
+        
+        // Добавляем компоненты основного узла
+        if (node is DeviceDescription deviceDesc && deviceDesc.Component != null)
+        {
+            items.AddRange(GenerateItems(deviceDesc, 0));
+        }
+        
+        Items = new PropertyItemCollection(items);
+        if (Items.Count <= 1)
+            Items.Add(new PropertyItemModel(null));
+    }
+}
+```
+
+### 5. Проверка привязки данных
+Убедитесь, что в XAML есть привязка для отображения компонентов:
+
+```xml
+<DataGrid ItemsSource="{Binding Items}">
+    <!-- ... другие колонки ... -->
+    <DataGridTemplateColumn Header="Component">
+        <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate>
+                <ItemsControl ItemsSource="{Binding Tag.Component}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding Name}" Margin="0,0,5,0"/>
+                                <TextBlock Text="{Binding Value}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </DataTemplate>
+        </DataGridTemplateColumn.CellTemplate>
+    </DataGridTemplateColumn>
+</DataGrid>
+```
+
+### Почему компоненты могли быть пустыми:
+1. **Неверный путь в XML**: Компоненты должны быть в том же namespace, что и основной документ.
+2. **Пропуск при десериализации**: Убедитесь, что класс `TypedefTypeComponent` имеет правильные атрибуты сериализации.
+3. **Отсутствие вызова RaisePropertyChanged**: При изменении компонентов должно вызываться уведомление.
+
+### Дополнительная проверка:
+Добавьте отладочный вывод в конструктор `DeviceDescription`:
+
+```csharp
+public DeviceDescription()
+{
+    componentField = new TypedefTypeComponentCollection(this);
+    Debug.WriteLine("DeviceDescription created with empty components");
+}
+```
+
+И в метод установки компонентов:
+
+```csharp
+set
+{
+    componentField = value;
+    Debug.WriteLine($"Components set. Count: {componentField?.Count ?? 0}");
+    // ... остальной код ...
+}
+``'
