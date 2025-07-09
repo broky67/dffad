@@ -169,3 +169,6 @@ if (forParameter == _parameter.Name.ToString())
     </StructdefType>
 </DeviceDescription>
 ```
+
+
+Components могут также быть и не в structdeftype, а например в somethingDefType, и таких ...deftype может быть несколько. Надо продумать, чтобы components брались не на прямую с structdeftype, а сначала определялись, какому deftype из xml принадлежит
