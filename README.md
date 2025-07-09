@@ -1,174 +1,336 @@
-Вот как реализовать **адаптер для `ParameterType`** с динамической загрузкой компонентов из XML **без хардкода**, используя существующие данные из `StructdefType`:
-
----
-
-### **1. Реализация адаптера**
-Адаптер будет:
-1. Принимать `ParameterType` и `StructdefType` (откуда брать компоненты).
-2. Автоматически подтягивать компоненты из `StructdefType` по имени параметра.
-
-```csharp
-public class ParameterTypeAdapter
-{
-    private readonly ParameterType _parameter;
-    private readonly StructdefType _structdef;
-
-    public TypedefTypeComponentCollection Components { get; }
-
-    public ParameterTypeAdapter(ParameterType parameter, StructdefType structdef)
+    public partial class StructdefType
     {
-        _parameter = parameter;
-        _structdef = structdef;
-        Components = new TypedefTypeComponentCollection();
-
-        // Загружаем компоненты из StructdefType
-        LoadComponents();
-    }
-
-    private void LoadComponents()
-    {
-        if (_structdef?.Component == null)
-            return;
-
-        // Пример: ищем компоненты по имени параметра
-        foreach (var component in _structdef.Component)
+        public override IEnumerable<_DeviceDescriptionNode> _Children
         {
-            if (component.Name.ToString().Contains(_parameter.Name.ToString()))
+            get
             {
-                Components.Add(component);
+                if (componentField != null)
+                    foreach (_DeviceDescriptionNode item in componentField)
+                        yield return item;
             }
         }
 
-        // Если не нашли, добавляем компоненты по умолчанию из StructdefType
-        if (Components.Count == 0 && _structdef.Component.Count > 0)
+        public override void Accept(PlatformVisitor visitor)
         {
-            foreach (var component in _structdef.Component)
+            if (visitor == null)
+                throw new ArgumentNullException("visitor");
+
+            visitor.PreviewVisit(this);
+
+            if (componentField != null)
+                foreach (var item in componentField)
+                    item.Accept(visitor);
+
+            visitor.Visit(this);
+        }
+    }
+
+ public partial class StructdefType : TypedefType
+    {
+
+        private TypedefTypeComponentCollection componentField;
+
+        private string iecTypeField;
+
+        //private string iecTypeLibField;
+
+        public StructdefType()
+        {
+            componentField = new TypedefTypeComponentCollection(this);
+        }
+
+        /// <remarks/>
+        [XmlElement("Component")]
+        public TypedefTypeComponentCollection Component
+        {
+            get
             {
-                Components.Add(new TypedefTypeComponent 
-                { 
-                    Name = component.Name, 
-                    Value = component.Value 
-                });
+                return this.componentField;
+            }
+            set
+            {
+                this.componentField = value;
+                if (componentField != null)
+                    componentField._Parent = this;
+                this.RaisePropertyChanged("Component");
+            }
+        }
+
+        /// <remarks/>
+        [XmlAttribute()]
+        public string iecType
+        {
+            get
+            {
+                return this.iecTypeField;
+            }
+            set
+            {
+                this.iecTypeField = value;
+                this.RaisePropertyChanged("iecType");
+            }
+        }
+
+        ///// <remarks/>
+        //[XmlAttribute()]
+        //public string iecTypeLib
+        //{
+        //    get
+        //    {
+        //        return this.iecTypeLibField;
+        //    }
+        //    set
+        //    {
+        //        this.iecTypeLibField = value;
+        //        this.RaisePropertyChanged("iecTypeLib");
+        //    }
+        //}
+
+        public override ItemsChoiceType Kind => ItemsChoiceType.StructType;
+    }
+
+
+public partial class ParameterType
+    {
+        public ParameterType()
+        {
+            typeField = "std:INT";
+            defaultField = new[] { new ParameterValueType() { Text = new[] { "0" } } };
+        }
+
+        [Bindable(true)]
+        [XmlIgnore]
+        public string DisplayId
+        {
+            get { return parameterIdField.ToString(); }
+            set
+            {
+                if (uint.TryParse(value, out parameterIdField))
+                    RaisePropertyChanged();
+            }
+        }
+
+        public override string _Name
+        {
+            get
+            {
+                return ToString();
+            }
+        }
+
+        public override string ToString()
+        {
+            string str;
+            if (nameField == null)
+                str = $"[{parameterIdField}] {base._Name}";
+            else
+                str = $"[{parameterIdField}] {nameField.ToString()}";
+            if (typeField != null)
+                str += $" : {typeField}";
+            if (unitField != null)
+                str += $" ({unitField})";
+            return str;
+        }
+
+        public override void Accept(PlatformVisitor visitor)
+        {
+            if (visitor == null)
+                throw new ArgumentNullException("visitor");
+
+            visitor.PreviewVisit(this);
+
+            if (attributesField != null)
+                attributesField.Accept(visitor);
+
+            if (defaultField != null)
+                foreach (var item in defaultField)
+                    item.Accept(visitor);
+
+            if (nameField != null)
+                nameField.Accept(visitor);
+
+            if (unitField != null)
+                unitField.Accept(visitor);
+
+            if (descriptionField != null)
+                descriptionField.Accept(visitor);
+
+            if (defaultMappingField != null)
+                foreach (var item in defaultMappingField)
+                    item.Accept(visitor);
+
+            visitor.Visit(this);
+        }
+    }
+
+
+ public partial class ParameterType : _DeviceDescriptionNode
+    {
+
+        private ParameterTypeAttributes attributesField;
+
+        private ParameterValueType[] defaultField;
+
+        private StringRefType nameField;
+
+        private StringRefType unitField;
+
+        private StringRefType descriptionField;
+
+        private string filterFlagsField;
+
+        private ParameterValueType[] defaultMappingField;
+
+        [NonSerialized] private XmlElement[] anyField;
+
+        private uint parameterIdField;
+
+        private string typeField;
+
+        /// <remarks/>
+        public ParameterTypeAttributes Attributes
+        {
+            get
+            {
+                return this.attributesField;
+            }
+            set
+            {
+                this.attributesField = value;
+                this.RaisePropertyChanged("Attributes");
+            }
+        }
+
+        /// <remarks/>
+        [XmlElement("Default")]
+        public ParameterValueType[] Default
+        {
+            get
+            {
+                return this.defaultField;
+            }
+            set
+            {
+                this.defaultField = value;
+                this.RaisePropertyChanged("Default");
+            }
+        }
+
+
+        /// <remarks/>
+        public StringRefType Name
+        {
+            get
+            {
+                return this.nameField;
+            }
+            set
+            {
+                this.nameField = value;
+                this.RaisePropertyChanged("Name");
+            }
+        }
+
+        /// <remarks/>
+        public StringRefType Unit
+        {
+            get
+            {
+                return this.unitField;
+            }
+            set
+            {
+                this.unitField = value;
+                this.RaisePropertyChanged("Unit");
+            }
+        }
+
+        /// <remarks/>
+        public StringRefType Description
+        {
+            get
+            {
+                return this.descriptionField;
+            }
+            set
+            {
+                this.descriptionField = value;
+                this.RaisePropertyChanged("Description");
+            }
+        }
+
+        /// <remarks/>
+        [XmlElement(DataType = "NMTOKENS")]
+        public string FilterFlags
+        {
+            get
+            {
+                return this.filterFlagsField;
+            }
+            set
+            {
+                this.filterFlagsField = value;
+                this.RaisePropertyChanged("FilterFlags");
+            }
+        }
+
+        /// <remarks/>
+        [XmlElement("DefaultMapping")]
+        public ParameterValueType[] DefaultMapping
+        {
+            get
+            {
+                return this.defaultMappingField;
+            }
+            set
+            {
+                this.defaultMappingField = value;
+                this.RaisePropertyChanged("DefaultMapping");
+            }
+        }
+
+        /// <remarks/>
+        [XmlAnyElement]
+        public XmlElement[] Any
+        {
+            get
+            {
+                return this.anyField;
+            }
+            set
+            {
+                this.anyField = value;
+                this.RaisePropertyChanged("Any");
+            }
+        }
+
+        /// <remarks/>
+        [XmlAttribute()]
+        public uint ParameterId
+        {
+            get
+            {
+                return this.parameterIdField;
+            }
+            set
+            {
+                this.parameterIdField = value;
+                this.RaisePropertyChanged("ParameterId");
+            }
+        }
+
+        /// <remarks/>
+        [XmlAttribute()]
+        public string type
+        {
+            get
+            {
+                return this.typeField;
+            }
+            set
+            {
+                this.typeField = value;
+                this.RaisePropertyChanged("type");
             }
         }
     }
-
-    // Делегируем свойства ParameterType
-    public StringRefType Name => _parameter.Name;
-    public ParameterValueType[] Default => _parameter.Default;
-}
-```
-
----
-
-### **2. Использование адаптера**
-При загрузке данных создаем адаптеры для `ParameterType`:
-
-```csharp
-public class DeviceDescriptionLoader
-{
-    public List<ParameterTypeAdapter> ParameterAdapters { get; } = new();
-
-    public void Load(DeviceDescription device)
-    {
-        // Находим StructdefType (источник компонентов)
-        var structdef = device.Items.OfType<StructdefType>().FirstOrDefault();
-
-        foreach (var param in device.Items.OfType<ParameterType>())
-        {
-            ParameterAdapters.Add(new ParameterTypeAdapter(param, structdef));
-        }
-    }
-}
-```
-
----
-
-### **3. Привязка к UI**
-В XAML используйте коллекцию `ParameterAdapters`:
-
-```xml
-<DataGrid ItemsSource="{Binding ParameterAdapters}">
-    <DataGrid.Columns>
-        <DataGridTextColumn Header="Name" Binding="{Binding Name}"/>
-        <DataGridTemplateColumn Header="Components">
-            <DataGridTemplateColumn.CellTemplate>
-                <DataTemplate>
-                    <ItemsControl ItemsSource="{Binding Components}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="{Binding Name}" Margin="0,0,5,0"/>
-                                    <TextBlock Text="{Binding Value}"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </DataTemplate>
-            </DataGridTemplateColumn.CellTemplate>
-        </DataGridTemplateColumn>
-    </DataGrid.Columns>
-</DataGrid>
-```
-
----
-
-### **4. Автоматическое сопоставление компонентов**
-Чтобы компоненты подгружались **без хардкода**, можно:
-#### **Вариант A: По соглашению имен**
-```csharp
-private void LoadComponents()
-{
-    if (_structdef?.Component == null)
-        return;
-
-    // Пример: параметр "Delay" → компоненты "Delay_Activation", "Delay_Deactivation"
-    foreach (var component in _structdef.Component)
-    {
-        if (component.Name.ToString().StartsWith(_parameter.Name.ToString()))
-        {
-            Components.Add(component);
-        }
-    }
-}
-```
-
-#### **Вариант B: Через атрибуты в XML**
-Добавьте в XML атрибут `ForParameter`:
-```xml
-<StructdefType>
-    <Component ForParameter="Delay">
-        <TypedefTypeComponent Name="Activation" Value="100"/>
-    </Component>
-</StructdefType>
-```
-И читайте его в коде:
-```csharp
-var forParameter = componentElement.Attributes["ForParameter"]?.Value;
-if (forParameter == _parameter.Name.ToString())
-{
-    Components.Add(component);
-}
-```
-
----
-
-### **5. Пример XML**
-Исходный XML (без изменений):
-```xml
-<DeviceDescription>
-    <ParameterType>
-        <Name>Delay</Name>
-        <Default>...</Default>
-    </ParameterType>
-    <StructdefType>
-        <Component>
-            <TypedefTypeComponent Name="Delay_Activation" Value="100"/>
-            <TypedefTypeComponent Name="Delay_Deactivation" Value="50"/>
-        </Component>
-    </StructdefType>
-</DeviceDescription>
-```
-
-
-Components могут также быть и не в structdeftype, а например в somethingDefType, и таких ...deftype может быть несколько. Надо продумать, чтобы components брались не на прямую с structdeftype, а сначала определялись, какому deftype из xml принадлежит
