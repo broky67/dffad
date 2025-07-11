@@ -1,3 +1,64 @@
+<Types>
+<StructType name="T_R17xx_Delay">
+      <Component identifier="Срабатывание" type="std:INT">
+        <Default>15</Default>
+        <VisibleName name="local:Item0">выдержка на срабатывание, в миллисекундах</VisibleName>
+      </Component>
+      <Component identifier="Возврат" type="std:INT">
+        <Default>6</Default>
+        <VisibleName name="local:Item1">выдержка на возврат, в миллисекундах</VisibleName>
+      </Component>
+    </StructType>
+    <BitfieldType basetype="std:WORD" name="T_K12xx_Inputs">
+      <Component identifier="Bit0" type="std:BIT">
+        <VisibleName name="local:Bit0">Вход 0</VisibleName>
+      </Component>
+      <Component identifier="Bit1" type="std:BIT">
+        <VisibleName name="local:Bit1">Вход 1</VisibleName>
+      </Component>
+      <Component identifier="Bit2" type="std:BIT">
+        <VisibleName name="local:Bit2">Вход 2</VisibleName>
+      </Component>
+      <Component identifier="Bit3" type="std:BIT">
+        <VisibleName name="local:Bit3">Вход 3</VisibleName>
+      </Component>
+      <Component identifier="Bit4" type="std:BIT">
+        <VisibleName name="local:Bit4">Вход 4</VisibleName>
+      </Component>
+      <Component identifier="Bit5" type="std:BIT">
+        <VisibleName name="local:Bit5">Вход 5</VisibleName>
+      </Component>
+      <Component identifier="Bit6" type="std:BIT">
+        <VisibleName name="local:Bit6">Вход 6</VisibleName>
+      </Component>
+      <Component identifier="Bit7" type="std:BIT">
+        <VisibleName name="local:Bit7">Вход 7</VisibleName>
+      </Component>
+    </BitfieldType>
+  </Types>
+
+
+<Device>
+
+    <!--Дискретные выходы с настраиваемой выдержкой-->
+    <Connector connectorId="2" explicit="false" hostpath="1" interface="Ekra.P18xx.Delay" moduleType="11504" role="parent">
+      <InterfaceName name="local:Delay">Параметры выходов с настраиваемой выдержкой</InterfaceName>
+      <Slot allowEmpty="true" count="1" />
+
+      <ParameterSet>
+        <ParameterSection>
+          <Name name="local:Delay">Параметры выходов с настраиваемой выдержкой</Name>
+          <Parameter ParameterId="4005" type="local:T_R17xx_Delay">
+            <Default>0</Default>
+            <Name name="local:Id4005">Параметры выходов с настраиваемой выдержкой</Name>
+          </Parameter>
+        </ParameterSection>
+      </ParameterSet>
+    </Connector>
+
+  </Device>
+
+
 Проблема в том, что `StructdefType` и `ParameterType` находятся на одном уровне в иерархии, и нам нужно правильно организовать связь между ними.
 
 ### Правильное решение (без использования DeviceDescription)
