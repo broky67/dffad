@@ -1,3 +1,152 @@
+Проблема в том, что `StructdefType` и `ParameterType` находятся на одном уровне в иерархии, и нам нужно правильно организовать связь между ними.
+
+### Правильное решение (без использования DeviceDescription)
+
+#### 1. Основная идея
+Так как оба класса (`ParameterType` и `StructdefType`) являются детьми `_DeviceDescriptionNode`, но не имеют прямого доступа друг к другу, нам нужно:
+
+1. Сначала собрать все `StructdefType` из родительского контейнера
+2. Потом связать их с `ParameterType`
+
+#### 2. Модифицированный код
+
+```csharp
+public class ComponentLinker
+{
+    public void LinkComponents(_DeviceDescriptionNode rootNode)
+    {
+        // 1. Находим все StructdefType в иерархии
+        var structDefs = FindAllNodes<StructdefType>(rootNode);
+        
+        // 2. Создаем словарь компонентов по группам
+        var componentGroups = new Dictionary<string, TypedefTypeComponent[]>();
+        foreach (var structDef in structDefs)
+        {
+            if (structDef.Component != null)
+            {
+                foreach (var group in structDef.Component.GroupBy(c => c.Group))
+                {
+                    componentGroups[group.Key] = group.ToArray();
+                }
+            }
+        }
+
+        // 3. Находим все ParameterType и связываем компоненты
+        var parameters = FindAllNodes<ParameterType>(rootNode);
+        foreach (var param in parameters)
+        {
+            if (!string.IsNullOrEmpty(param.ComponentType) && 
+                componentGroups.TryGetValue(param.ComponentType, out var components))
+            {
+                param.LinkedComponents.AddRange(components);
+            }
+        }
+    }
+
+    private List<T> FindAllNodes<T>(_DeviceDescriptionNode node) where T : _DeviceDescriptionNode
+    {
+        var result = new List<T>();
+        CollectNodes(node, result);
+        return result;
+    }
+
+    private void CollectNodes<T>(_DeviceDescriptionNode node, List<T> result) where T : _DeviceDescriptionNode
+    {
+        if (node is T matchedNode)
+        {
+            result.Add(matchedNode);
+        }
+
+        if (node is IChildrenContainer container)
+        {
+            foreach (var child in container._Children)
+            {
+                CollectNodes(child, result);
+            }
+        }
+    }
+}
+```
+
+#### 3. Необходимые изменения в классах
+
+Добавьте интерфейс для работы с детьми:
+
+```csharp
+public interface IChildrenContainer
+{
+    IEnumerable<_DeviceDescriptionNode> _Children { get; }
+}
+
+public partial class ParameterSectionType : _DeviceDescriptionNode, IChildrenContainer
+{
+    public IEnumerable<_DeviceDescriptionNode> _Children => Items;
+}
+
+public partial class StructdefType : _DeviceDescriptionNode, IChildrenContainer
+{
+    public IEnumerable<_DeviceDescriptionNode> _Children => Component;
+}
+```
+
+#### 4. Использование
+
+```csharp
+// Где-то в коде после загрузки данных:
+var rootNode = GetRootNode(); // Ваш корневой элемент
+new ComponentLinker().LinkComponents(rootNode);
+```
+
+#### 5. Альтернатива без изменения классов
+
+Если нельзя добавлять интерфейсы, используйте visitor pattern:
+
+```csharp
+public class ComponentCollector : PlatformVisitor
+{
+    public List<StructdefType> StructDefs { get; } = new();
+    public List<ParameterType> Parameters { get; } = new();
+
+    public override void Visit(StructdefType node)
+    {
+        StructDefs.Add(node);
+        base.Visit(node);
+    }
+
+    public override void Visit(ParameterType node)
+    {
+        Parameters.Add(node);
+        base.Visit(node);
+    }
+}
+
+// Использование:
+var collector = new ComponentCollector();
+rootNode.Accept(collector);
+// Далее используем collector.StructDefs и collector.Parameters
+```
+
+### Почему предыдущий вариант не работал?
+
+1. **Ошибка в логике**: Я предположил, что `DeviceDescription` содержит `Items`, но в вашем случае иерархия строится через `_Children` и visitor pattern.
+
+2. **Не учитывалась структура**: `ParameterType` и `StructdefType` могут находиться на разных уровнях вложенности.
+
+### Ключевые моменты нового решения:
+
+1. **Рекурсивный обход** — ищем все узлы определённого типа в иерархии
+2. **Гибкое связывание** — используем `ComponentType` для явного указания связей
+3. **Совместимость** — не требует изменения XML-структуры
+4. **Производительность** — словарь для быстрого поиска компонентов
+
+Какой вариант вам больше подходит: с интерфейсом `IChildrenContainer` или через visitor pattern?
+
+
+
+
+
+
+
 public partial class ParameterType : _DeviceDescriptionNode
 {
     // Существующие поля
