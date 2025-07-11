@@ -93,3 +93,58 @@ private IEnumerable<PropertyItemModel> GenerateItems(_DeviceDescriptionNode node
     }
     // ... остальная логика ...
 }
+
+
+-------
+1. **Метод `UpdateItems`**  
+   В `Property2View.xaml.cs`, где вызывается десериализация:
+   ```csharp
+   public void UpdateItems(_DeviceDescriptionNode node)
+   {
+       // ...
+       if (node != null)
+       {
+           var device = node as DeviceDescription;
+           new ComponentLinker().LinkComponents(device); // ← Здесь
+           var items = GenerateItems(node, 0);
+       }
+   }
+   ```
+
+2. **Место создания `DeviceDescription`**  
+   Если данные загружаются из файла, ищите вызовы `XmlSerializer`.
+
+
+   Если вы используете MVVM (рекомендуется)**
+В ViewModel, где работает с данными:
+
+```csharp
+public class DeviceViewModel : INotifyPropertyChanged
+{
+    private DeviceDescription _device;
+    
+    public void LoadDevice(string xmlPath)
+    {
+        // 1. Загрузка XML
+        _device = LoadDeviceDescription(xmlPath);
+        
+        // 2. Связывание компонентов
+        new ComponentLinker().LinkComponents(_device);
+        
+        // 3. Обновление UI
+        RaisePropertyChanged(nameof(Device));
+    }
+    
+    private DeviceDescription LoadDeviceDescription(string path)
+    {
+        var serializer = new XmlSerializer(typeof(DeviceDescription));
+        using (var reader = new StreamReader(path))
+        {
+            return (DeviceDescription)serializer.Deserialize(reader);
+        }
+    }
+}
+```
+
+**Где вызывать:**  
+В команде загрузки файла или в конструкторе ViewModel.
