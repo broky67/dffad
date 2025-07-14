@@ -1,3 +1,105 @@
+Проблема в том, что в текущей реализации `_Parent` может ссылаться на всю коллекцию `DeviceDescriptionCollection` вместо конкретного родительского элемента. Давайте это исправим:
+
+### 1. Изменения в базовом классе
+```csharp
+public abstract partial class _DeviceDescriptionNode : _IDeviceDescriptionNode, IDeserializationCallback 
+{
+    [NonSerialized] 
+    private _DeviceDescriptionNode _parent; // Изменено с _IDeviceDescriptionNode
+
+    [Browsable(false)]
+    [XmlIgnore]
+    public virtual _DeviceDescriptionNode _Parent 
+    { 
+        get => _parent; 
+        set 
+        {
+            if (value != _parent)
+            {
+                _parent = value;
+                OnParentChanged();
+            }
+        } 
+    }
+
+    protected virtual void OnParentChanged() { }
+}
+```
+
+### 2. Модификация коллекции
+```csharp
+public class DeviceDescriptionCollection : ICollection<_DeviceDescriptionNode>
+{
+    private readonly List<_DeviceDescriptionNode> _items = new();
+
+    public void Add(_DeviceDescriptionNode item)
+    {
+        if (item != null)
+        {
+            item._Parent = this.Owner; // Устанавливаем владельца коллекции
+            _items.Add(item);
+        }
+    }
+
+    [XmlIgnore]
+    public _DeviceDescriptionNode Owner { get; set; }
+}
+```
+
+### 3. Использование в иерархии
+```csharp
+public class DeviceDescription : _DeviceDescriptionNode
+{
+    private DeviceDescriptionCollection _items;
+
+    public DeviceDescription()
+    {
+        _items = new DeviceDescriptionCollection { Owner = this };
+    }
+
+    public DeviceDescriptionCollection Items
+    {
+        get => _items;
+        set
+        {
+            _items = value;
+            _items.Owner = this; // Устанавливаем себя как владельца
+        }
+    }
+
+    public override IEnumerable<_DeviceDescriptionNode> _Children => Items;
+}
+```
+
+### 4. Пример корректного связывания
+```csharp
+var device = new DeviceDescription();
+var param = new ParameterType();
+
+device.Items.Add(param); 
+// Теперь param._Parent будет указывать на device, а не на коллекцию
+```
+
+### Ключевые изменения:
+1. **Тип `_Parent`** - теперь строго `_DeviceDescriptionNode`
+2. **Контроль присваивания** - через свойство с проверкой
+3. **Явное указание владельца** - в коллекции через свойство `Owner`
+4. **Уведомления** - метод `OnParentChanged` для реактивности
+
+### Почему это работает:
+- Коллекция теперь прозрачно управляет родительскими ссылками
+- Гарантируется, что `_Parent` всегда будет конкретным объектом, а не коллекцией
+- Сохраняется возможность сериализации (благодаря `[XmlIgnore]`)
+
+Для полной реализации вам также стоит:
+1. Добавить обработку удаления элементов из коллекции
+2. Реализовать `INotifyPropertyChanged` если нужно отслеживать изменения
+3. Учесть ваши конкретные требования к сериализации
+
+Какой аспект реализации нужно уточнить дополнительно?
+
+
+
 public abstract partial class _DeviceDescriptionNode : _IDeviceDescriptionNode, IDeserializationCallback
     {
         [field: NonSerialized]
