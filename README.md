@@ -1,4 +1,34 @@
+public abstract partial class _DeviceDescriptionNode : _IDeviceDescriptionNode, IDeserializationCallback
+    {
+        [field: NonSerialized]
+        private _IDeviceDescriptionNode _parent;
 
+        public _DeviceDescriptionNode()
+        {
+            _Name = GetType().Name;
+        }
+
+        [Browsable(false)]
+        [XmlIgnore]
+        public virtual _IDeviceDescriptionNode _Parent { get { return _parent; } set { _parent = value; } }
+
+        [Browsable(false)]
+        [XmlIgnore]
+        public virtual string _Name { get; set; }
+
+        [Browsable(false)]
+        [XmlIgnore]
+        public virtual IEnumerable<_DeviceDescriptionNode> _Children { get; }
+
+        void IDeserializationCallback.OnDeserialization(object sender)
+        {
+            OnDeserialization(sender);
+        }
+
+        protected virtual void OnDeserialization(object sender)
+        {
+        }
+    }
 ### 1. Модель данных (добавляем только свойства)
 ```csharp
 public partial class ParameterType : _DeviceDescriptionNode
