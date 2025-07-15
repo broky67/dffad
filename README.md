@@ -12,7 +12,7 @@ foreach (var item in items.Where(x => x._Name == constStringName))
         result = structItem;
         // Работа с StructdefType
         var components = structItem.Component;
-    }
+    } 
     else if (item is BitdefType bitItem)
     {
         result = bitItem;
