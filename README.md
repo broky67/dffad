@@ -1,33 +1,29 @@
- var constStringName = "T_R17xx_Delay (StructType)";
-var testn = (DeviceDescription)device._Parent._Parent;
-var descriptonTypes = testn.Types;
-var items = descriptonTypes.Items;
+            else if (node is ParameterType parameterType)
+            {
+                var nodeType = node.GetType();
+                var nodeTypeName = nodeType.Name;
 
-// Используем базовый тип или интерфейс, если они существуют
-object result = null;
-foreach (var item in items.Where(x => x._Name == constStringName))
-{
-    if (item is StructdefType structItem)
-    {
-        result = structItem;
-        // Работа с StructdefType
-        var components = structItem.Component;
-    } 
-    else if (item is BitdefType bitItem)
-    {
-        result = bitItem;
-        // Работа с BitdefType
-    }
-}
+                var paramTypeField = parameterType.type;
+                var paramTypeFieldWithoutLocal = paramTypeField.Substring(paramTypeField.IndexOf(':') + 1);
 
-// Или альтернативный вариант с сохранением типа
-var matchingItem = items.FirstOrDefault(x => x._Name == constStringName);
-if (matchingItem is StructdefType structDef)
-{
-    var components = structDef.Component;
-    // Работа с StructdefType
-}
-else if (matchingItem is BitdefType bitDef)
-{
-    // Работа с BitdefType
-}
+                TypedefTypeComponentCollection components;
+
+                if (nodeTypeName is "ParameterType")
+                {
+                    var devDescNode = (DeviceDescription)node._Parent._Parent._Parent._Parent._Parent._Parent._Parent._Parent; //2 for e200rx
+                    var descriptonTypes = devDescNode.Types;
+                    var items = descriptonTypes.Items;
+
+                    var constStringName = items.FirstOrDefault(x => x._Name.Contains(paramTypeFieldWithoutLocal))._Name;  //"T_R17xx_Delay (StructType)"
+
+                    var matchingItem = items.FirstOrDefault(x => x._Name == constStringName);
+
+                    if (matchingItem is StructdefType structDef)
+                    {
+                        components = structDef.Component;
+                    }
+                    else if (matchingItem is BitfielddefType bitDef)
+                    {
+                        components = bitDef.Component;
+                    }
+                }
