@@ -1,6 +1,18 @@
-Если нужно упростить поиск родителя `DeviceDescription`, можно сделать это без обобщенного метода `FindAncestorOfType`, а просто написать прямой цикл.  
+Если нужно избежать `dynamic`, можно явно определить интерфейс или базовый класс для узлов, у которых есть `_Parent`, и использовать приведение типов.  
 
-### **Упрощенный вариант:**
+### **1. Определим интерфейс для узлов с родителем**  
+Допустим, у всех узлов есть свойство `_Parent` типа `object` (или более конкретного базового типа). Создадим интерфейс:  
+
+```csharp
+public interface IParentNode
+{
+    object _Parent { get; }  // или более конкретный тип, если известен
+}
+```
+
+### **2. Используем явное приведение типов**  
+Теперь код можно переписать без `dynamic`, полагаясь на интерфейс:  
+
 ```csharp
 else if (node is ParameterType parameterType)
 {
@@ -11,100 +23,68 @@ else if (node is ParameterType parameterType)
 
     // Ищем DeviceDescription, поднимаясь по родителям
     DeviceDescription devDescNode = null;
-    dynamic current = node;
-    while (current != null)
+    object current = node;
+
+    while (current is IParentNode parentNode)
     {
+        current = parentNode._Parent;
         if (current is DeviceDescription desc)
         {
             devDescNode = desc;
             break;
         }
-        current = current._Parent; // предполагаем, что у всех узлов есть _Parent
     }
 
     if (devDescNode != null)
     {
         var constStringName = devDescNode.Types.Items
-            .FirstOrDefault(x => x._Name.Contains(paramTypeFieldWithoutLocal))?._Name;
+            .FirstOrDefault(x => x._Name?.Contains(paramTypeFieldWithoutLocal) == true)?._Name;
 
         if (constStringName != null)
         {
             var matchingItem = devDescNode.Types.Items
                 .FirstOrDefault(x => x._Name == constStringName);
 
-            if (matchingItem is StructdefType structDef)
-                components = structDef.Component;
-            else if (matchingItem is BitfielddefType bitDef)
-                components = bitDef.Component;
+            components = matchingItem switch
+            {
+                StructdefType structDef => structDef.Component,
+                BitfielddefType bitDef => bitDef.Component,
+                _ => null
+            };
         }
     }
 }
 ```
 
-### **Что изменилось:**
-1. **Убран обобщенный метод** → вместо него простой цикл `while` для поиска `DeviceDescription`.  
-2. **Логика осталась той же**, но код стал короче и понятнее.  
-3. **LINQ-запросы** (`FirstOrDefault`) сделаны более компактными.  
+### **Ключевые изменения:**
+1. **Убран `dynamic`** → используется интерфейс `IParentNode` и явное приведение типов.  
+2. **Проверка `_Name?.Contains()`** → безопасная обработка `null`.  
+3. **Использован `switch`** для выбора типа компонента (альтернатива `if-else`).  
 
-### **Если `_Parent` может быть `null`:**
+### **Если нельзя изменить исходные классы (нет доступа к `IParentNode`)**
+Можно использовать приведение к `object` и проверку на `null`:  
+
 ```csharp
-while (current?._Parent != null) // безопасная проверка на null
+DeviceDescription devDescNode = null;
+object current = node;
+
+while (current != null)
 {
-    current = current._Parent;
     if (current is DeviceDescription desc)
     {
         devDescNode = desc;
         break;
     }
+
+    // Получаем _Parent через рефлексию (если нет интерфейса)
+    var parentProperty = current.GetType().GetProperty("_Parent");
+    current = parentProperty?.GetValue(current);
 }
 ```
 
-Этот вариант проще и быстрее, если нужно найти только `DeviceDescription`. Если же в других местах кода требуется искать разные типы родителей, лучше вернуться к обобщенному методу. 🚀
+### **Итог:**
+- **Лучший вариант** → добавить `IParentNode` и работать без `dynamic`.  
+- **Если нельзя менять код** → использовать рефлексию (медленнее, но гибко).  
+- **Самая простая альтернатива** → явный цикл с приведением к `object` (как в первом примере).  
 
-
-
-
-else if (node is ParameterType parameterType)
-{
-    var paramTypeField = parameterType.type;
-    var paramTypeFieldWithoutLocal = paramTypeField.Substring(paramTypeField.IndexOf(':') + 1);
-
-    TypedefTypeComponentCollection components = null;
-
-    // Получаем DeviceDescription через вспомогательный метод
-    var devDescNode = FindAncestorOfType<DeviceDescription>(node);
-    if (devDescNode != null)
-    {
-        var descriptonTypes = devDescNode.Types;
-        var items = descriptonTypes.Items;
-
-        var constStringName = items.FirstOrDefault(x => x._Name.Contains(paramTypeFieldWithoutLocal))?._Name;
-        if (constStringName != null)
-        {
-            var matchingItem = items.FirstOrDefault(x => x._Name == constStringName);
-
-            if (matchingItem is StructdefType structDef)
-            {
-                components = structDef.Component;
-            }
-            else if (matchingItem is BitfielddefType bitDef)
-            {
-                components = bitDef.Component;
-            }
-        }
-    }
-}
-
-// Вспомогательный метод для поиска родителя определенного типа
-private static T FindAncestorOfType<T>(object node) where T : class
-{
-    dynamic current = node;
-    while (current != null)
-    {
-        if (current is T result)
-            return result;
-        
-        current = current._Parent; // предполагается, что у всех узлов есть _Parent
-    }
-    return null;
-}
+Код стал типобезопасным и не требует `dynamic` 🚀.
