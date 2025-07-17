@@ -1,3 +1,151 @@
+Чтобы добавить строку с текстовым значением в древовидную структуру перед работой с `Component`, можно использовать следующий подход:
+
+### 1. Создадим простую модель для текстового узла
+Добавим класс для представления текстового узла:
+
+```csharp
+public class TextNode : ObservableObject
+{
+    private string _text;
+    public string Text
+    {
+        get => _text;
+        set { _text = value; RaisePropertyChanged(); }
+    }
+
+    public TextNode(string text)
+    {
+        Text = text;
+    }
+}
+```
+
+### 2. Модифицируем PropertyItemModel
+Добавим поддержку текстовых узлов в `PropertyItemModel`:
+
+```csharp
+public class PropertyItemModel : ObservableObject
+{
+    // ... существующие свойства ...
+    
+    private ObservableCollection<PropertyItemModel> _children;
+    public ObservableCollection<PropertyItemModel> Children
+    {
+        get => _children ??= new ObservableCollection<PropertyItemModel>();
+        set { _children = value; RaisePropertyChanged(); }
+    }
+
+    public void AddTextNode(string text)
+    {
+        Children.Add(new PropertyItemModel(new TextNode(text))
+        {
+            Name = text,
+            IsEditableValue = false,
+            IsEditableName = false
+        });
+    }
+}
+```
+
+### 3. Добавим метод для создания текстового узла
+В вашей ViewModel или в коде, где создается древовидная структура:
+
+```csharp
+public void AddTextNodeToTree()
+{
+    var rootItem = new PropertyItemModel(yourTagObject)
+    {
+        Name = "Root Node"
+    };
+    
+    // Добавляем текстовый узел
+    rootItem.AddTextNode("Информация о компоненте:");
+    rootItem.AddTextNode("Версия: 1.0");
+    rootItem.AddTextNode("Дата создания: " + DateTime.Now.ToShortDateString());
+    
+    // Потом можно будет добавить компоненты
+    // rootItem.AddComponentNodes(componentData);
+    
+    Items.Add(rootItem);
+}
+```
+
+### 4. Обновим XAML для отображения текстовых узлов
+Модифицируем шаблон в Property2View.xaml:
+
+```xml
+<kivi:DataTreeGrid.Resources>
+    <HierarchicalDataTemplate DataType="{x:Type local:PropertyItemModel}" 
+                            ItemsSource="{Binding Children}">
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Text="{Binding Name}" Margin="5,0"/>
+            <TextBlock Text="{Binding Tag.Text}" 
+                      Visibility="{Binding Tag.Text, Converter={StaticResource NullToVisibilityConverter}}"
+                      Margin="5,0" Foreground="Gray"/>
+        </StackPanel>
+    </HierarchicalDataTemplate>
+</kivi:DataTreeGrid.Resources>
+```
+
+### 5. Добавим конвертер для видимости текста
+Добавим в ресурсы:
+
+```xml
+<local:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
+```
+
+Сам конвертер:
+
+```csharp
+public class NullToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return value == null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+```
+
+### 6. Пример использования
+Теперь можно сначала добавить текстовые узлы, а потом компоненты:
+
+```csharp
+var item = new PropertyItemModel(componentTag)
+{
+    Name = componentTag.Name
+};
+
+// Добавляем текстовую информацию
+item.AddTextNode("Тип: " + componentTag.Type);
+item.AddTextNode("Описание: " + componentTag.Description);
+
+// Позже можно добавить сами компоненты
+foreach (var component in componentTag.Components)
+{
+    item.Children.Add(new PropertyItemModel(component)
+    {
+        Name = component.Name,
+        IsEditableValue = true
+    });
+}
+
+Items.Add(item);
+```
+
+Такой подход позволяет:
+1. Сначала добавить текстовую информацию о компоненте
+2. Затем постепенно добавлять сами компоненты
+3. Сохранять древовидную структуру
+4. Легко расширять функционал добавления новых типов узлов
+
+Когда будете готовы работать с компонентами, просто добавляйте их в коллекцию Children соответствующих узлов.
+
+
 Чтобы вывести компоненты (`Component`) из `Tag` в `DataTreeGrid` в WPF, вам нужно правильно настроить привязки и шаблоны. Вот как это можно сделать:
 
 ### 1. **Добавьте конвертер для извлечения компонентов из `Tag`**
