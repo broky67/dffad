@@ -1,45 +1,81 @@
-Совместим первый и третий подходы:
-
-1. Добавим класс для пустой строки:
-
-```csharp
-public class EmptyGridItem : _DeviceDescriptionNode
-{
-    public EmptyGridItem() 
-    {
-        _Name = " "; // Пробел для отображения
-        IsEnabled = false; // Делаем строку неинтерактивной
-    }
-}
-```
-
-2. Модифицируем загрузку данных:
-
-```csharp
-private async Task LoadLibraries()
-{
-    // ... существующий код ...
-    
-    // Добавляем пустую строку в конце
-    Application.Current.Dispatcher.Invoke(() =>
-    {
-        if (HwRoot.Count > 0 && !(HwRoot.Last() is EmptyGridItem))
+        public TypedefTypeComponentCollection Component
         {
-            HwRoot.Add(new EmptyGridItem());
+            get
+            {
+                return this.componentField;
+            }
+            set
+            {
+                this.componentField = SetComponent();
+                if (componentField != null)
+                    componentField._Parent = this;
+                this.RaisePropertyChanged("Component");
+            }
         }
-    });
-}
-```
 
-3. Обновим стиль для пустой строки в XAML:
 
-```xml
-<Style TargetType="{x:Type kivi:DataTreeGridRow}" BasedOn="{StaticResource {x:Type kivi:DataTreeGridRow}}">
-    <Style.Triggers>
-        <DataTrigger Binding="{Binding}" Value="{x:Null}">
-            <Setter Property="Height" Value="25"/>
-            <Setter Property="Background" Value="Transparent"/>
-        </DataTrigger>
-    </Style.Triggers>
-</Style>
-```
+public void SetComponent(_DeviceDescriptionNode node)
+        {
+            if (node is ParameterType parameterType)
+            {
+                var nodeType = node.GetType();
+                var nodeTypeName = nodeType.Name;
+
+                var paramTypeField = parameterType.type;
+
+                string prefix = "local";
+                bool res = paramTypeField.StartsWith(prefix);
+                while (res)
+                {
+                    var paramTypeFieldWithoutLocal = paramTypeField.Substring(paramTypeField.IndexOf(':') + 1);
+
+                    /*TypedefTypeComponentCollection components;*/
+
+                    if (nodeTypeName is "ParameterType")
+                    {
+                        DeviceDescription devDescNode = null;
+                        object current = node;
+                        int maxCounter = 10;
+                        while (current is _IDeviceDescriptionNode parentNode && maxCounter-- > 0)
+                        {
+                            current = parentNode._Parent;
+                            if (current is DeviceDescription desc)
+                            {
+                                devDescNode = desc;
+                                break;
+                            }
+                        }
+
+                        var descriptonTypes = devDescNode.Types;
+                        var items = descriptonTypes.Items;
+                        var constStringName = string.Empty;
+                        try
+                        {
+                            constStringName = items.FirstOrDefault(x => x._Name.Contains(paramTypeFieldWithoutLocal))._Name;  //"T_R17xx_Delay (StructType)"
+
+                        }
+                        catch (Exception ex)
+                        {
+                            throw new NullReferenceException("Такого имени нет в DescriptionTypes", ex);
+                        }
+
+
+                        var matchingItem = items.FirstOrDefault(x => x._Name == constStringName);
+
+                        if (matchingItem is StructdefType structDef)
+                        {
+                            parameterType.Component = structDef.Component;
+                            /* аналогично для BitfielddefType*/
+                            break;
+                        }
+                        else if (matchingItem is BitfielddefType bitDef)
+                        {
+                            parameterType.Component = bitDef.Component;
+                            /* использовать как новое свойство parametertype как локальную переменную*/
+                            /*components = bitDef.Component;*/ /*TypedefTypeComponentCollection components;*/
+                            break;
+                        }
+                    }
+                }
+            }
+        }
