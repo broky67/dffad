@@ -1,6 +1,43 @@
-Понял проблему. Вам нужно обрабатывать как стандартные типы (`std:int`), так и кастомные (`local:something`). Вот исправленное решение:
+Понял проблему. Если `current` не содержит `_Parent`, нам нужно пересмотреть подход к поиску родительских элементов. Вот исправленное решение:
 
-### 1. Модифицированный метод SetComponent
+### 1. Проверка наличия Parent
+
+Сначала добавим проверку наличия свойства `_Parent` через рефлексию:
+
+```csharp
+private static object GetParent(object current)
+{
+    if (current == null) return null;
+    
+    // Получаем свойство _Parent через рефлексию
+    var parentProperty = current.GetType().GetProperty("_Parent");
+    return parentProperty?.GetValue(current);
+}
+```
+
+### 2. Модифицированный метод поиска DeviceDescription
+
+```csharp
+private DeviceDescription FindDeviceDescription()
+{
+    object current = this;
+    int safetyCounter = 20; // Защита от зацикливания
+
+    while (current != null && safetyCounter-- > 0)
+    {
+        // Проверяем, является ли текущий объект DeviceDescription
+        if (current is DeviceDescription deviceDesc)
+            return deviceDesc;
+
+        // Получаем родителя через рефлексию
+        current = GetParent(current);
+    }
+
+    return null; // Не нашли DeviceDescription
+}
+```
+
+### 3. Обновленный метод SetComponent
 
 ```csharp
 public void SetComponent()
@@ -8,51 +45,25 @@ public void SetComponent()
     if (string.IsNullOrEmpty(this.type))
         return;
 
-    // Разделяем тип на пространство имен и имя
-    var typeParts = this.type.Split(':');
-    if (typeParts.Length != 2)
-        return;
+    string typeName = this.type;
+    const string localPrefix = "local:";
 
-    var typeNamespace = typeParts[0]; // "std" или "local"
-    var typeName = typeParts[1];     // "int", "MyStruct" и т.д.
-
-    // Обработка стандартных типов
-    if (typeNamespace == "std")
+    if (!typeName.StartsWith(localPrefix))
     {
-        this.Component = CreateBasicTypeComponent(typeName);
+        // Обработка стандартных типов (std:int и др.)
+        this.Component = CreateBasicComponent(typeName);
         return;
     }
 
-    // Обработка кастомных типов (local:something)
-    if (typeNamespace == "local")
-    {
-        InitializeLocalTypeComponent(typeName);
-    }
-}
+    typeName = typeName.Substring(localPrefix.Length);
+    var deviceDescription = FindDeviceDescription();
 
-private void InitializeLocalTypeComponent(string typeName)
-{
-    DeviceDescription devDesc = null;
-    object current = this;
-    int safetyCounter = 10;
-
-    // Поиск DeviceDescription в иерархии
-    while (current != null && safetyCounter-- > 0)
-    {
-        current = (current as _IDeviceDescriptionNode)?._Parent;
-        if (current is DeviceDescription desc)
-        {
-            devDesc = desc;
-            break;
-        }
-    }
-
-    if (devDesc?.Types?.Items == null)
+    if (deviceDescription?.Types?.Items == null)
         return;
 
-    // Поиск типа по имени (без учета регистра и с частичным совпадением)
-    var targetType = devDesc.Types.Items.FirstOrDefault(x => 
-        x._Name?.Contains(typeName, StringComparison.OrdinalIgnoreCase) == true);
+    // Поиск типа по имени
+    var targetType = deviceDescription.Types.Items
+        .FirstOrDefault(x => x._Name?.Contains(typeName) == true);
 
     if (targetType is StructdefType structDef)
     {
@@ -63,30 +74,17 @@ private void InitializeLocalTypeComponent(string typeName)
         this.Component = bitDef.Component;
     }
 }
-
-private TypedefTypeComponentCollection CreateBasicTypeComponent(string stdTypeName)
-{
-    // Создаем минимальный компонент для базовых типов
-    return new TypedefTypeComponentCollection
-    {
-        new TypedefTypeComponent
-        {
-            Name = new StringRefType { Value = stdTypeName },
-            Type = new StringRefType { Value = $"std:{stdTypeName}" }
-        }
-    };
-}
 ```
 
-### 2. Где вызывать эту функцию
+### 4. Где вызывать эту функцию
 
-**Оптимальные места:**
+**Лучшие варианты:**
 
-1. **В конструкторе ParameterType**:
+1. **В конструкторе**:
 ```csharp
 public ParameterType()
 {
-    SetComponent(); // Автоматическая инициализация
+    SetComponent();
 }
 ```
 
@@ -99,48 +97,53 @@ public string type
     set
     {
         _type = value;
-        SetComponent(); // Обновляем при изменении типа
+        SetComponent();
         RaisePropertyChanged(nameof(type));
     }
 }
 ```
 
-### 3. Дополнительные улучшения
+### 5. Дополнительная защита
 
-**Для обработки всех случаев добавьте:**
+Добавим проверку в метод:
 
 ```csharp
-public class ParameterType : _IDeviceDescriptionNode
+private TypedefTypeComponentCollection CreateBasicComponent(string typeName)
 {
-    // ...
-
-    protected override void OnParentChanged()
+    return new TypedefTypeComponentCollection
     {
-        base.OnParentChanged();
-        SetComponent(); // Обновляем при изменении иерархии
-    }
+        new TypedefTypeComponent
+        {
+            Name = new StringRefType { Value = typeName },
+            Type = new StringRefType { Value = typeName }
+        }
+    };
 }
 ```
 
 ### Почему это работает:
 
-1. **Раздельная обработка типов**:
-   - `std:int` → создаем простой компонент
-   - `local:MyType` → ищем в DeviceDescription
+1. **Универсальный поиск родителя** через рефлексию
+2. **Защита от зацикливания** через safetyCounter
+3. **Раздельная обработка** local и std типов
+4. **Автоматическая инициализация** компонента
 
-2. **Полный проход по всем типам**:
-   - Не прерывается на std-типах
-   - Корректно обрабатывает local-типы
+### Если Parent действительно отсутствует
 
-3. **Автоматическая инициализация**:
-   - При создании объекта
-   - При изменении типа
-   - При изменении родителя
+В случае, если иерархия не предусмотрена, можно:
 
-Пример использования:
+1. Передавать DeviceDescription явно:
 ```csharp
-var param1 = new ParameterType { type = "std:int" }; // Создаст простой компонент
-var param2 = new ParameterType { type = "local:MyStruct" }; // Найдет в DeviceDescription
+public void SetComponent(DeviceDescription deviceDescription = null)
+{
+    deviceDescription ??= FindDeviceDescription();
+    // ... остальная логика
+}
 ```
 
-Это решение гарантирует обработку всех типов и поддерживает вашу оригинальную логику работы с компонентами.
+2. Использовать сервис локатора:
+```csharp
+var deviceDescription = ServiceLocator.Get<DeviceDescription>();
+```
+
+Это решение обеспечит стабильную работу даже при отсутствии явной родительской ссылки.
