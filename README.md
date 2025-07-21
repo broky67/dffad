@@ -1,104 +1,96 @@
+Понял проблему. Вам нужно обрабатывать как стандартные типы (`std:int`), так и кастомные (`local:something`). Вот исправленное решение:
 
-### 1. Модифицированная функция SetComponent (остается в вашем классе ParameterType)
+### 1. Модифицированный метод SetComponent
 
 ```csharp
 public void SetComponent()
 {
-    if (string.IsNullOrEmpty(this.type)) 
+    if (string.IsNullOrEmpty(this.type))
         return;
 
-    var paramTypeField = this.type;
-    const string prefix = "local:";
+    // Разделяем тип на пространство имен и имя
+    var typeParts = this.type.Split(':');
+    if (typeParts.Length != 2)
+        return;
 
-    if (paramTypeField.StartsWith(prefix))
+    var typeNamespace = typeParts[0]; // "std" или "local"
+    var typeName = typeParts[1];     // "int", "MyStruct" и т.д.
+
+    // Обработка стандартных типов
+    if (typeNamespace == "std")
     {
-        var paramTypeFieldWithoutLocal = paramTypeField.Substring(prefix.Length);
+        this.Component = CreateBasicTypeComponent(typeName);
+        return;
+    }
 
-        // Поиск DeviceDescription через родителей (как в вашем оригинальном коде)
-        DeviceDescription devDescNode = null;
-        object current = this; // Используем текущий объект как начальную точку
-        int maxCounter = 10;
-
-        while (current is _IDeviceDescriptionNode parentNode && maxCounter-- > 0)
-        {
-            current = parentNode._Parent;
-            if (current is DeviceDescription desc)
-            {
-                devDescNode = desc;
-                break;
-            }
-        }
-
-        if (devDescNode?.Types?.Items == null)
-            return;
-
-        try
-        {
-            var constStringName = devDescNode.Types.Items
-                .FirstOrDefault(x => x._Name?.Contains(paramTypeFieldWithoutLocal) == true)?._Name;
-
-            if (string.IsNullOrEmpty(constStringName))
-                return;
-
-            var matchingItem = devDescNode.Types.Items
-                .FirstOrDefault(x => x._Name == constStringName);
-
-            if (matchingItem is StructdefType structDef)
-            {
-                this.Component = structDef.Component;
-            }
-            else if (matchingItem is BitfielddefType bitDef)
-            {
-                this.Component = bitDef.Component;
-            }
-        }
-        catch (Exception ex)
-        {
-            // Логирование ошибки
-            Debug.WriteLine($"Ошибка при установке компонента: {ex.Message}");
-        }
+    // Обработка кастомных типов (local:something)
+    if (typeNamespace == "local")
+    {
+        InitializeLocalTypeComponent(typeName);
     }
 }
-```
 
-### 2. Где и как вызывать эту функцию:
-
-**Вариант A: При создании ParameterType**
-
-```csharp
-public ParameterType(string type)
+private void InitializeLocalTypeComponent(string typeName)
 {
-    this.type = type;
-    SetComponent(); // Автоматически инициализируем компонент
-}
-```
+    DeviceDescription devDesc = null;
+    object current = this;
+    int safetyCounter = 10;
 
-**Вариант B: В методе загрузки данных (в LibraryViewModel)**
-
-```csharp
-private async Task LoadLibraries()
-{
-    var files = Directory.GetFiles("libraries", "*.xml");
-    foreach (var file in files)
+    // Поиск DeviceDescription в иерархии
+    while (current != null && safetyCounter-- > 0)
     {
-        var deviceDescription = await XmlHelper.DeserializeAsync<DeviceDescription>(file);
-        
-        // Инициализация компонентов для всех ParameterType
-        foreach (var item in deviceDescription.ParameterSet?.Items ?? Enumerable.Empty<_DeviceDescriptionNode>())
+        current = (current as _IDeviceDescriptionNode)?._Parent;
+        if (current is DeviceDescription desc)
         {
-            if (item is ParameterType parameterType)
-            {
-                parameterType.SetComponent();
-            }
+            devDesc = desc;
+            break;
         }
-        
-        Application.Current.Dispatcher.Invoke(() => HwRoot.Add(deviceDescription));
+    }
+
+    if (devDesc?.Types?.Items == null)
+        return;
+
+    // Поиск типа по имени (без учета регистра и с частичным совпадением)
+    var targetType = devDesc.Types.Items.FirstOrDefault(x => 
+        x._Name?.Contains(typeName, StringComparison.OrdinalIgnoreCase) == true);
+
+    if (targetType is StructdefType structDef)
+    {
+        this.Component = structDef.Component;
+    }
+    else if (targetType is BitfielddefType bitDef)
+    {
+        this.Component = bitDef.Component;
     }
 }
+
+private TypedefTypeComponentCollection CreateBasicTypeComponent(string stdTypeName)
+{
+    // Создаем минимальный компонент для базовых типов
+    return new TypedefTypeComponentCollection
+    {
+        new TypedefTypeComponent
+        {
+            Name = new StringRefType { Value = stdTypeName },
+            Type = new StringRefType { Value = $"std:{stdTypeName}" }
+        }
+    };
+}
 ```
 
-**Вариант C: В сеттере свойства type**
+### 2. Где вызывать эту функцию
 
+**Оптимальные места:**
+
+1. **В конструкторе ParameterType**:
+```csharp
+public ParameterType()
+{
+    SetComponent(); // Автоматическая инициализация
+}
+```
+
+2. **В сеттере свойства type**:
 ```csharp
 private string _type;
 public string type
@@ -107,43 +99,48 @@ public string type
     set
     {
         _type = value;
-        SetComponent(); // Автоматически обновляем компонент при изменении типа
+        SetComponent(); // Обновляем при изменении типа
         RaisePropertyChanged(nameof(type));
     }
 }
 ```
 
-### 3. Модифицированное свойство Component:
+### 3. Дополнительные улучшения
+
+**Для обработки всех случаев добавьте:**
 
 ```csharp
-private TypedefTypeComponentCollection _component;
-
-public TypedefTypeComponentCollection Component
+public class ParameterType : _IDeviceDescriptionNode
 {
-    get => _component;
-    set
+    // ...
+
+    protected override void OnParentChanged()
     {
-        _component = value;
-        if (_component != null)
-        {
-            _component._Parent = this;
-        }
-        RaisePropertyChanged(nameof(Component));
+        base.OnParentChanged();
+        SetComponent(); // Обновляем при изменении иерархии
     }
 }
 ```
 
-### Ключевые отличия от вашего исходного кода:
+### Почему это работает:
 
-1. **Не требует передачи параметра** - работает с текущим объектом (`this`)
-2. **Более безопасный** - добавлены проверки на null
-3. **Сохраняет оригинальную логику** поиска через цепочку родителей
-4. **Гибкие варианты вызова** - можно вызывать в конструкторе, при загрузке или при изменении типа
+1. **Раздельная обработка типов**:
+   - `std:int` → создаем простой компонент
+   - `local:MyType` → ищем в DeviceDescription
 
-### Что передается в функцию:
-- **Ничего явно не передается** - функция работает с полями текущего объекта (`this.type`)
-- Вся необходимая информация берется из:
-  - `this.type` - тип параметра
-  - `this._Parent` - цепочка родителей для поиска DeviceDescription
+2. **Полный проход по всем типам**:
+   - Не прерывается на std-типах
+   - Корректно обрабатывает local-типы
 
-Это решение максимально близко к вашему исходному коду, но исправляет архитектурные проблемы и ошибки вызова.
+3. **Автоматическая инициализация**:
+   - При создании объекта
+   - При изменении типа
+   - При изменении родителя
+
+Пример использования:
+```csharp
+var param1 = new ParameterType { type = "std:int" }; // Создаст простой компонент
+var param2 = new ParameterType { type = "local:MyStruct" }; // Найдет в DeviceDescription
+```
+
+Это решение гарантирует обработку всех типов и поддерживает вашу оригинальную логику работы с компонентами.
