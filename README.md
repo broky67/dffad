@@ -1,3 +1,161 @@
+Понял проблему. Вот окончательное решение с правильной проверкой на `null` и гарантированным обходом всей иерархии:
+
+### 1. Улучшенный метод `InitializeComponents`
+
+```csharp
+private void InitializeComponents(_DeviceDescriptionNode node)
+{
+    if (node == null) return;
+
+    // 1. Обрабатываем текущий узел
+    if (node is ParameterType parameterType)
+    {
+        try
+        {
+            parameterType.SetComponent(parameterType);
+            Debug.WriteLine($"Processed: {parameterType._Name}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error in {parameterType._Name}: {ex.Message}");
+        }
+    }
+
+    // 2. Рекурсивно обрабатываем детей (с безопасной проверкой)
+    ProcessChildren(node);
+}
+
+private void ProcessChildren(_DeviceDescriptionNode node)
+{
+    // Вариант 1: Если дети хранятся в _Children
+    if (node is IChildrenContainer container && container._Children != null)
+    {
+        foreach (var child in container._Children.Where(c => c != null))
+        {
+            InitializeComponents(child);
+        }
+        return;
+    }
+
+    // Вариант 2: Если дети хранятся в отдельных свойствах
+    if (node is DeviceDescription device)
+    {
+        SafeProcess(device.ParameterSet?.Items);
+        SafeProcess(device.Components);
+        SafeProcess(device.Modules);
+    }
+}
+
+private void SafeProcess(IEnumerable<_DeviceDescriptionNode> items)
+{
+    if (items == null) return;
+    
+    foreach (var item in items.Where(i => i != null))
+    {
+        InitializeComponents(item);
+    }
+}
+```
+
+### 2. Полная реализация в `LoadLibraries`
+
+```csharp
+private async Task LoadLibraries()
+{
+    try
+    {
+        var files = Directory.GetFiles("libraries", "*.xml");
+        foreach (var file in files)
+        {
+            var platform = await XmlHelper.DeserializeAsync<DeviceDescription>(file);
+            platform._Name = Path.GetFileName(file);
+
+            Debug.WriteLine($"\nLoading: {platform._Name}");
+
+            // Обработка всех устройств платформы
+            foreach (var device in platform.Device ?? Enumerable.Empty<DeviceDescription>())
+            {
+                // Особый случай для E200-R17xx
+                if (platform._Name == "e200_new.xml" && 
+                    device._Name == "[4096] E200-R17xx (1.0.0.0)")
+                {
+                    Debug.WriteLine("Found target device");
+                }
+                
+                InitializeComponents(device);
+            }
+
+            Application.Current.Dispatcher.Invoke(() => HwRoot.Add(platform));
+        }
+    }
+    catch (Exception ex)
+    {
+        Debug.WriteLine($"Load failed: {ex}");
+        // Дополнительная обработка ошибок
+    }
+}
+```
+
+### Ключевые улучшения:
+
+1. **Безопасная проверка детей**:
+   - Отдельный метод `ProcessChildren` для обработки иерархии
+   - Поддержка разных способов хранения дочерних элементов
+
+2. **Гибкая архитектура**:
+   ```csharp
+   public interface IChildrenContainer
+   {
+       IEnumerable<_DeviceDescriptionNode> _Children { get; }
+   }
+   ```
+   Реализуйте этот интерфейс для всех контейнерных узлов
+
+3. **Защита от null**:
+   - Проверка `Where(c => c != null)` при обходе коллекций
+   - Отдельный метод `SafeProcess` для обработки любых IEnumerable
+
+4. **Поддержка сложных структур**:
+   - Обработка DeviceDescription с разными типами детей
+   - Рекурсивный обход ParameterSet, Components, Modules
+
+### Как это решает проблему:
+
+1. Если у узла нет детей (`_Children == null`), метод просто завершится
+2. Если следующий узел имеет детей, он будет обработан при своем вызове `InitializeComponents`
+3. Гарантирован обход всей иерархии без пропусков
+
+### Дополнительные рекомендации:
+
+1. Для отладки добавьте:
+```csharp
+Debug.WriteLine($"Processing {node.GetType().Name}: {node._Name}");
+```
+
+2. Если порядок важен, используйте:
+```csharp
+container._Children?
+    .OrderBy(x => x._OrderField)
+    .ToList()
+    .ForEach(InitializeComponents);
+```
+
+3. Для обработки особых случаев:
+```csharp
+if (node is SpecialType special)
+{
+    // Особая обработка
+    return; // Если не нужно продолжать обход
+}
+```
+
+Это решение обеспечивает надежный обход всей иерархии, даже если некоторые узлы не содержат детей, а их соседи содержат.
+
+
+
+
+
+
 Проблема в том, что рекурсивный обход дерева в текущей реализации может обрабатывать узлы в "неправильном" порядке. Давайте исправим это, сохранив порядок обхода и гарантированно вызывая `SetComponent` для всех `ParameterType`.
 
 ### Исправленный метод `InitializeComponents`
