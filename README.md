@@ -1,4 +1,137 @@
-Вот исправленная версия метода `LoadLibraries` с правильной инициализацией компонентов:
+Проблема в том, что рекурсивный обход дерева в текущей реализации может обрабатывать узлы в "неправильном" порядке. Давайте исправим это, сохранив порядок обхода и гарантированно вызывая `SetComponent` для всех `ParameterType`.
+
+### Исправленный метод `InitializeComponents`
+
+```csharp
+private void InitializeComponents(_DeviceDescriptionNode node)
+{
+    // 1. Сначала обрабатываем текущий узел
+    if (node is ParameterType parameterType)
+    {
+        try
+        {
+            // Вызываем SetComponent с проверкой порядка
+            Debug.WriteLine($"Обрабатываем параметр: {parameterType._Name}");
+            parameterType.SetComponent(parameterType);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Ошибка в {parameterType._Name}: {ex.Message}");
+        }
+    }
+
+    // 2. Затем обрабатываем детей в исходном порядке
+    if (node._Children != null)
+    {
+        foreach (var child in node._Children)
+        {
+            InitializeComponents(child);
+        }
+    }
+}
+```
+
+### Полный исправленный код загрузки
+
+```csharp
+private async Task LoadLibraries()
+{
+    try
+    {
+        var files = Directory.GetFiles("libraries", "*.xml");
+        foreach (var file in files)
+        {
+            var platformDescription = await Pilot.XmlHelper.DeserializeAsync<DeviceDescription>(file);
+            platformDescription._Name = Path.GetFileName(file);
+
+            // Для отладки порядка обработки
+            Debug.WriteLine($"\nЗагружаем файл: {platformDescription._Name}");
+
+            // Обрабатываем все устройства платформы
+            foreach (var device in platformDescription.Device ?? Enumerable.Empty<DeviceDescription>())
+            {
+                // Особая обработка для E200-R17xx
+                if (platformDescription._Name == "e200_new.xml" && 
+                    device._Name == "[4096] E200-R17xx (1.0.0.0)")
+                {
+                    Debug.WriteLine("Найдено целевое устройство E200-R17xx");
+                    InitializeComponents(device);
+                }
+                else
+                {
+                    InitializeComponents(device);
+                }
+            }
+
+            Application.Current.Dispatcher.Invoke(() => HwRoot.Add(platformDescription));
+        }
+    }
+    catch (Exception ex)
+    {
+        Debug.WriteLine($"Критическая ошибка: {ex}");
+    }
+}
+```
+
+### Почему это работает правильно:
+
+1. **Строгий порядок обхода**:
+   - Сначала обрабатывается текущий узел
+   - Затем дети в исходном порядке (как они указаны в XML)
+
+2. **Отладочный вывод**:
+   - Добавлены сообщения для отслеживания порядка обработки
+   - Позволяет точно видеть, какие узлы и в каком порядке обрабатываются
+
+3. **Гибкая обработка**:
+   - Особая логика для E200-R17xx
+   - Стандартная обработка для остальных устройств
+
+### Дополнительные улучшения:
+
+Если порядок всё ещё нарушается, добавьте сортировку:
+
+```csharp
+foreach (var child in node._Children.OrderBy(x => x._Order)) // Используйте нужное свойство для сортировки
+{
+    InitializeComponents(child);
+}
+```
+
+Или явно указывайте порядок:
+
+```csharp
+// Обработка специальных узлов первыми
+var orderedChildren = node._Children?
+    .OrderByDescending(x => x is SpecialNode)
+    .ThenBy(x => x._Name);
+
+if (orderedChildren != null)
+{
+    foreach (var child in orderedChildren)
+    {
+        InitializeComponents(child);
+    }
+}
+```
+
+Это решение гарантирует:
+- Сохранение исходного порядка узлов
+- Обработку всех ParameterType
+- Возможность отладки через Debug.WriteLine
+- Гибкую настройку порядка при необходимости
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+- Вот исправленная версия метода `LoadLibraries` с правильной инициализацией компонентов:
 
 ```csharp
 private async Task LoadLibraries()
