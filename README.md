@@ -1,3 +1,99 @@
+Вот упрощенная реализация с заменой `foreach` на `while` для поиска `ParameterType`:
+
+```csharp
+private void InitializeComponents(DeviceDescription deviceDescription)
+{
+    if (deviceDescription?.ParameterSet?.Items == null) 
+        return;
+
+    int index = 0;
+    var items = deviceDescription.ParameterSet.Items;
+    
+    // Простой цикл while по коллекции Items
+    while (index < items.Count)
+    {
+        if (items[index] is ParameterType parameterType)
+        {
+            // Вызываем SetComponent с автоматическим поиском DeviceDescription
+            parameterType.SetComponent();
+        }
+        index++;
+    }
+}
+```
+
+И модифицированный метод `SetComponent` (без параметров):
+
+```csharp
+public void SetComponent()
+{
+    if (string.IsNullOrEmpty(this.type) || !this.type.StartsWith("local:"))
+        return;
+
+    string typeName = this.type.Substring(6); // "R17xx_Delay"
+    DeviceDescription deviceDescription = null;
+    object current = this;
+    int maxDepth = 10;
+
+    // Ищем DeviceDescription вверх по иерархии
+    while (current != null && maxDepth-- > 0)
+    {
+        current = (current as _IDeviceDescriptionNode)?._Parent;
+        if (current is DeviceDescription desc)
+        {
+            deviceDescription = desc;
+            break;
+        }
+    }
+
+    if (deviceDescription?.Types?.Items == null)
+        return;
+
+    // Оригинальная логика поиска компонента
+    var matchingItem = deviceDescription.Types.Items
+        .FirstOrDefault(x => x._Name?.Contains(typeName) == true);
+
+    if (matchingItem is StructdefType structDef)
+    {
+        this.Component = structDef.Component;
+    }
+    else if (matchingItem is BitfielddefType bitDef)
+    {
+        this.Component = bitDef.Component;
+    }
+}
+```
+
+### Ключевые особенности:
+
+1. **Простой while-цикл** вместо foreach
+2. **Автономный SetComponent**:
+   - Не требует передачи параметров
+   - Сам находит DeviceDescription через _Parent
+3. **Сохранена оригинальная логика** поиска компонентов
+
+### Как использовать:
+
+```csharp
+// При загрузке данных
+var deviceDescription = LoadDeviceDescription();
+InitializeComponents(deviceDescription);
+```
+
+### Преимущества:
+
+1. Максимально просто - только замена foreach на while
+2. Не требует изменения существующей логики
+3. Сохраняет все проверки и безопасность оригинального кода
+4. Не использует дополнительные структуры данных (стек/очередь)
+
+Это решение минимально изменяет ваш код, решая поставленную задачу замены foreach на while.
+
+
+
+
+
+
 Вот универсальная реализация `SetComponent`, которая работает с `DeviceDescription` или `DeviceDescriptionDevice`, сохраняя вашу оригинальную логику:
 
 ```csharp
