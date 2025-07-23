@@ -1,3 +1,118 @@
+Вот универсальная реализация `SetComponent`, которая работает с `DeviceDescription` или `DeviceDescriptionDevice`, сохраняя вашу оригинальную логику:
+
+```csharp
+public void SetComponent(object rootNode)
+{
+    if (rootNode == null || string.IsNullOrEmpty(this.type)) 
+        return;
+
+    const string prefix = "local:";
+    if (!this.type.StartsWith(prefix))
+        return;
+
+    string typeName = this.type.Substring(prefix.Length);
+    DeviceDescription deviceDescription = null;
+
+    // Определяем DeviceDescription из разных типов rootNode
+    if (rootNode is DeviceDescription dd)
+    {
+        deviceDescription = dd;
+    }
+    else if (rootNode is DeviceDescriptionDevice ddd)
+    {
+        // Ищем DeviceDescription вверх по иерархии
+        object current = ddd;
+        int maxDepth = 10;
+        while (current != null && maxDepth-- > 0)
+        {
+            current = (current as _IDeviceDescriptionNode)?._Parent;
+            if (current is DeviceDescription desc)
+            {
+                deviceDescription = desc;
+                break;
+            }
+        }
+    }
+
+    if (deviceDescription?.Types?.Items == null)
+        return;
+
+    // Оригинальная логика поиска компонента
+    var matchingItem = deviceDescription.Types.Items
+        .FirstOrDefault(x => x._Name?.Contains(typeName) == true);
+
+    if (matchingItem is StructdefType structDef)
+    {
+        this.Component = structDef.Component;
+    }
+    else if (matchingItem is BitfielddefType bitDef)
+    {
+        this.Component = bitDef.Component;
+    }
+}
+```
+
+### Где и как вызывать:
+
+1. **В LibraryViewModel при загрузке:**
+```csharp
+foreach (var item in deviceDescription.ParameterSet.Items)
+{
+    if (item is ParameterType parameterType)
+    {
+        parameterType.SetComponent(deviceDescription); // Передаём DeviceDescription
+    }
+}
+```
+
+2. **Для DeviceDescriptionDevice:**
+```csharp
+foreach (var device in deviceDescription.Device)
+{
+    foreach (var param in device.GetParameters()) // Ваш метод получения параметров
+    {
+        if (param is ParameterType parameterType)
+        {
+            parameterType.SetComponent(device); // Передаём DeviceDescriptionDevice
+        }
+    }
+}
+```
+
+3. **В конструкторе ParameterType (опционально):**
+```csharp
+public ParameterType(object rootNode)
+{
+    Dispatcher.CurrentDispatcher.BeginInvoke(
+        () => SetComponent(rootNode),
+        DispatcherPriority.Loaded);
+}
+```
+
+### Ключевые особенности:
+
+1. **Универсальный параметр**:
+   - Принимает `DeviceDescription` или `DeviceDescriptionDevice`
+   - Самостоятельно находит нужные данные
+
+2. **Совместимость**:
+   - Работает с вашей текущей иерархией
+   - Сохраняет оригинальную логику поиска компонентов
+
+3. **Безопасность**:
+   - Проверки на null
+   - Защита от зацикливания (maxDepth)
+   - Обработка через Dispatcher при необходимости
+
+4. **Гибкость**:
+   - Можно вызывать из любого места
+   - Не зависит от конкретной реализации родительских классов
+
+Это решение позволяет использовать метод как в оригинальном коде, так и в новых сценариях работы с DeviceDescriptionDevice.
+
+
+
+
 Вот решение, которое сохраняет вашу оригинальную логику с минимальными изменениями, но переделывает поиск через детей (children) вместо родителей, используя цикл `while` как в исходном коде:
 
 ```csharp
