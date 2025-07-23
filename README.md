@@ -1,3 +1,117 @@
+Вот решение, которое сохраняет вашу оригинальную логику с минимальными изменениями, но переделывает поиск через детей (children) вместо родителей, используя цикл `while` как в исходном коде:
+
+```csharp
+public void SetComponent()
+{
+    if (string.IsNullOrEmpty(this.type) || !this.type.StartsWith("local:"))
+        return;
+
+    string typeName = this.type.Substring(6); // Убираем "local:"
+
+    // 1. Находим DeviceDescription через детей
+    DeviceDescription deviceDescription = null;
+    var nodesToProcess = new Queue<_IDeviceDescriptionNode>();
+    nodesToProcess.Enqueue(this);
+
+    int maxIterations = 1000;
+    int currentIteration = 0;
+
+    while (nodesToProcess.Count > 0 && currentIteration++ < maxIterations)
+    {
+        var currentNode = nodesToProcess.Dequeue();
+
+        // Если нашли DeviceDescription - запоминаем и выходим
+        if (currentNode is DeviceDescription desc)
+        {
+            deviceDescription = desc;
+            break;
+        }
+
+        // Добавляем детей в очередь для обработки
+        if (currentNode is DeviceDescriptionTypes types && types.Items != null)
+        {
+            foreach (var item in types.Items) 
+                if (item is _IDeviceDescriptionNode node) 
+                    nodesToProcess.Enqueue(node);
+        }
+        else if (currentNode is DeviceDescriptionParameterSet paramSet && paramSet.Items != null)
+        {
+            foreach (var item in paramSet.Items) 
+                if (item is _IDeviceDescriptionNode node) 
+                    nodesToProcess.Enqueue(node);
+        }
+        // Добавьте другие случаи по аналогии при необходимости
+    }
+
+    if (deviceDescription == null) return;
+
+    // 2. Оригинальная логика поиска компонента
+    var matchingItem = deviceDescription.Types?.Items?
+        .FirstOrDefault(x => x._Name?.Contains(typeName) == true);
+
+    if (matchingItem is StructdefType structDef)
+    {
+        this.Component = structDef.Component;
+    }
+    else if (matchingItem is BitfielddefType bitDef)
+    {
+        this.Component = bitDef.Component;
+    }
+}
+```
+
+### Ключевые особенности:
+
+1. **Сохранена структура оригинального метода**:
+   - Все еще void метод
+   - Работает с текущим объектом (this)
+   - Сохранена логика обработки type
+
+2. **Поиск через детей**:
+   - Использует очередь (BFS-обход)
+   - Ищет DeviceDescription в поддереве
+   - Ограничение maxIterations для безопасности
+
+3. **Минимальные изменения**:
+   - Не требует передачи параметра
+   - Не нужны дополнительные методы
+   - Работает с существующей иерархией
+
+4. **Где вызывать**:
+```csharp
+// В LibraryViewModel после загрузки
+foreach (var item in deviceDescription.ParameterSet.Items)
+{
+    if (item is ParameterType paramType)
+    {
+        Dispatcher.CurrentDispatcher.BeginInvoke(
+            (Action)paramType.SetComponent, 
+            DispatcherPriority.Background);
+    }
+}
+```
+
+### Почему это решает проблему:
+
+1. **Не требует передачи ParameterType**:
+   - Метод работает с this
+   - Сам находит нужные данные в иерархии
+
+2. **Работает при неполной иерархии**:
+   - Не зависит от _Parent
+   - Находит данные даже в сложных структурах
+
+3. **Безопасность**:
+   - Ограничение итераций
+   - Проверки на null
+   - Обработка через Dispatcher
+
+Это решение максимально близко к вашему оригинальному коду, но переворачивает логику поиска "с ног на голову", сохраняя при этом все преимущества исходного подхода.
+
+
+
+
+
 Вот минимально измененная версия вашего оригинального метода `SetComponent`, интегрированная в правильное место с сохранением основной логики:
 
 ### 1. Оригинальный метод `SetComponent` с минимальными изменениями:
