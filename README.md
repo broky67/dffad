@@ -1,3 +1,98 @@
+Вот адаптированный метод `SetComponent`, который принимает `DeviceDescriptionDevice` и работает с вашей иерархией объектов:
+
+```csharp
+public void SetComponent(DeviceDescriptionDevice device)
+{
+    if (device == null || string.IsNullOrEmpty(this.type)) 
+        return;
+
+    const string prefix = "local:";
+    if (!this.type.StartsWith(prefix))
+        return;
+
+    string typeName = this.type.Substring(prefix.Length);
+    DeviceDescription deviceDescription = null;
+
+    // Ищем родительский DeviceDescription
+    object current = device;
+    int maxDepth = 10;
+    while (current != null && maxDepth-- > 0)
+    {
+        current = (current as _IDeviceDescriptionNode)?._Parent;
+        if (current is DeviceDescription desc)
+        {
+            deviceDescription = desc;
+            break;
+        }
+    }
+
+    if (deviceDescription?.Types?.Items == null)
+        return;
+
+    // Оригинальная логика поиска компонента
+    var matchingItem = deviceDescription.Types.Items
+        .FirstOrDefault(x => x._Name?.Contains(typeName) == true);
+
+    if (matchingItem is StructdefType structDef)
+    {
+        this.Component = structDef.Component;
+    }
+    else if (matchingItem is BitfielddefType bitDef)
+    {
+        this.Component = bitDef.Component;
+    }
+}
+```
+
+### Как использовать:
+
+1. **Для DeviceDescriptionDevice**:
+```csharp
+foreach (var device in deviceDescription.Device)
+{
+    foreach (var param in GetParametersFromDevice(device)) // Ваш метод получения параметров
+    {
+        if (param is ParameterType parameterType)
+        {
+            parameterType.SetComponent(device); // Передаём DeviceDescriptionDevice
+        }
+    }
+}
+```
+
+2. **Универсальный вариант вызова**:
+```csharp
+public void SetComponentUniversal(object rootNode)
+{
+    if (rootNode is DeviceDescription dd)
+    {
+        SetComponent(dd);
+    }
+    else if (rootNode is DeviceDescriptionDevice ddd)
+    {
+        SetComponent(ddd);
+    }
+}
+```
+
+### Ключевые изменения:
+
+1. **Специализированный параметр** - принимает только `DeviceDescriptionDevice`
+2. **Автоматический поиск** `DeviceDescription` в иерархии
+3. **Сохранена оригинальная логика** поиска компонентов в Types.Items
+
+### Особенности работы:
+
+1. Принимает конкретный `DeviceDescriptionDevice` вместо абстрактного object
+2. Ищет родительский `DeviceDescription` через цепочку `_Parent`
+3. Использует стандартный механизм поиска компонентов по имени типа
+
+Это решение сохраняет вашу бизнес-логику, но делает интерфейс более строгим и типобезопасным.
+
+
+
+
+
 Вот упрощенная реализация с заменой `foreach` на `while` для поиска `ParameterType`:
 
 ```csharp
