@@ -1,22 +1,36 @@
-private ParameterType FindBusAddressParameter(_IDeviceDescriptionNode node)
-{
-    var queue = new Queue<_IDeviceDescriptionNode>();
-    queue.Enqueue(node);
+{ Pilot.TargetPlatform.ParameterSectionType.< get__Children > d__20} - обрабатывает правильно
+             {Pilot.TargetPlatform._DeviceDescriptionFolderNode<Pilot.TargetPlatform.DeviceConnector>} - children count = 2, но при этом отрабатывает этот участок кода else if (node._Children == null)
+            {
+                Enumerable.Empty<_IDeviceDescriptionNode>();
+            }
 
-    while (queue.Count > 0)
-    {
-        var current = queue.Dequeue();
-        
-        if (current is ParameterType parameterType && 
-            parameterType._Name == "Адрес блока на шине")
+private void FindAndSetParameterComponents(_IDeviceDescriptionNode node)
         {
-            return parameterType; // Первое точное совпадение
-        }
+            if (node == null)
+                return;
 
-        foreach (var child in current._Children ?? Enumerable.Empty<_IDeviceDescriptionNode>())
-        {
-            queue.Enqueue(child); // Обход в ширину
+            // Проверяем текущий узел
+            if (node is ParameterType parameterType)
+            {
+                parameterType.SetComponent();
+                return;
+            }
+            /*{ Pilot.TargetPlatform.ParameterSectionType.< get__Children > d__20} - обрабатывает правильно
+             {Pilot.TargetPlatform._DeviceDescriptionFolderNode<Pilot.TargetPlatform.DeviceConnector>} - children count = 2, но при этом отрабатывает этот участок кода else if (node._Children == null)
+            {
+                Enumerable.Empty<_IDeviceDescriptionNode>();
+            }
+             */
+            // Рекурсивно проверяем детей
+            if (node._Children != null)
+            { 
+                foreach (var child in node._Children)
+                {
+                    FindAndSetParameterComponents(child);
+                }
+            }
+            else if (node._Children == null)
+            {
+                Enumerable.Empty<_IDeviceDescriptionNode>();
+            }
         }
-    }
-    return null;
-}
