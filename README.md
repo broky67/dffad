@@ -1,4 +1,104 @@
-Проблема в вашем коде связана с неправильным обходом иерархии. Вот исправленная версия:
+Проблема в том, что ваш текущий код неправильно обходит иерархию объектов. Давайте исправим метод `TakeParameterType`, чтобы он точно находил нужный `ParameterType`:
+
+```csharp
+public void TakeParameterType(DeviceDescription platformDescription)
+{
+    if (platformDescription?.Device == null) return;
+
+    foreach (var device in platformDescription.Device)
+    {
+        if (device._Name == "[4096] E200-R17xx (1.0.0.0)")
+        {
+            // Ищем ParameterType в конкретном месте иерархии
+            var parameterType = FindSpecificParameterType(device);
+            if (parameterType != null)
+            {
+                parameterType.SetComponent();
+            }
+            break;
+        }
+    }
+}
+
+private ParameterType FindSpecificParameterType(_IDeviceDescriptionNode device)
+{
+    // 1. Проверяем непосредственные параметры устройства
+    foreach (var child in device._Children ?? Enumerable.Empty<_IDeviceDescriptionNode>())
+    {
+        if (child is ParameterType parameterType)
+        {
+            return parameterType;
+        }
+    }
+
+    // 2. Если не нашли, проверяем вложенные модули
+    foreach (var child in device._Children ?? Enumerable.Empty<_IDeviceDescriptionNode>())
+    {
+        if (child is DeviceDescriptionModule module)
+        {
+            foreach (var moduleChild in module._Children ?? Enumerable.Empty<_IDeviceDescriptionNode>())
+            {
+                if (moduleChild is ParameterType parameterType)
+                {
+                    return parameterType;
+                }
+            }
+        }
+    }
+
+    return null;
+}
+```
+
+Ключевые изменения:
+
+1. **Точечный поиск** - вместо общего обхода ищем ParameterType в конкретных местах иерархии
+2. **Два уровня проверки**:
+   - Сначала проверяем непосредственные параметры устройства
+   - Затем проверяем параметры в модулях (если есть)
+3. **Возвращаем конкретный ParameterType**, а не первый попавшийся
+
+Если вам нужно найти параметр с определенным именем, модифицируйте метод:
+
+```csharp
+private ParameterType FindSpecificParameterType(_IDeviceDescriptionNode device, string expectedParameterName)
+{
+    foreach (var child in device._Children ?? Enumerable.Empty<_IDeviceDescriptionNode>())
+    {
+        if (child is ParameterType parameterType && parameterType._Name == expectedParameterName)
+        {
+            return parameterType;
+        }
+        
+        if (child is DeviceDescriptionModule module)
+        {
+            foreach (var moduleChild in module._Children ?? Enumerable.Empty<_IDeviceDescriptionNode>())
+            {
+                if (moduleChild is ParameterType parameterType && parameterType._Name == expectedParameterName)
+                {
+                    return parameterType;
+                }
+            }
+        }
+    }
+    return null;
+}
+```
+
+И вызывайте так:
+```csharp
+var parameterType = FindSpecificParameterType(device, "ExpectedParameterName");
+```
+
+Такой подход гарантирует, что:
+1. Вы найдете именно нужный ParameterType
+2. Не будете зависеть от порядка обхода
+3. Сможете точно контролировать, какой параметр обрабатываете
+4.
+5.
+6.
+7.
+8. Проблема в вашем коде связана с неправильным обходом иерархии. Вот исправленная версия:
 
 ```csharp
 public void TakeParameterType(DeviceDescription platformDescription)
