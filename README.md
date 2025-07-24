@@ -1,4 +1,117 @@
-Проблема в том, что ваш текущий код неправильно обходит иерархию объектов. Давайте исправим метод `TakeParameterType`, чтобы он точно находил нужный `ParameterType`:
+Проблема в том, что при обходе иерархии код не продолжает поиск, когда встречает `DeviceDescriptionNode`. Давайте исправим это, добавив полный рекурсивный обход всех узлов:
+
+```csharp
+public void TakeParameterType(DeviceDescription platformDescription)
+{
+    if (platformDescription?.Device == null) return;
+
+    foreach (var device in platformDescription.Device)
+    {
+        if (device._Name == "[4096] E200-R17xx (1.0.0.0)")
+        {
+            // Рекурсивный поиск всех ParameterType
+            FindAndProcessParameters(device);
+            break;
+        }
+    }
+}
+
+private void FindAndProcessParameters(_IDeviceDescriptionNode node)
+{
+    if (node == null) return;
+
+    // Если это ParameterType - обрабатываем
+    if (node is ParameterType parameterType)
+    {
+        parameterType.SetComponent();
+        return; // Если нужно только первый найденный
+    }
+
+    // Рекурсивно обходим всех детей
+    foreach (var child in node._Children ?? Enumerable.Empty<_IDeviceDescriptionNode>())
+    {
+        FindAndProcessParameters(child);
+    }
+}
+```
+
+### Почему предыдущий код не работал:
+
+1. **Проблема в условии while**:
+   ```csharp
+   while (current is _IDeviceDescriptionNode childNode && maxCounter-- > 0)
+   {
+       current = childNode._Children; // _Children - это IEnumerable, а не одиночный узел
+       // ...
+   }
+   ```
+   Вы присваивали коллекцию детей вместо перехода к конкретному ребенку
+
+2. **Решение**:
+
+### Альтернатива с явным стеком (без рекурсии):
+
+```csharp
+private void FindAndProcessParameters(_IDeviceDescriptionNode rootNode)
+{
+    var stack = new Stack<_IDeviceDescriptionNode>();
+    stack.Push(rootNode);
+
+    while (stack.Count > 0)
+    {
+        var current = stack.Pop();
+        
+        if (current is ParameterType parameterType)
+        {
+            parameterType.SetComponent();
+            continue;
+        }
+
+        if (current._Children != null)
+        {
+            foreach (var child in current._Children.Reverse()) // Reverse для порядка обхода
+            {
+                stack.Push(child);
+            }
+        }
+    }
+}
+```
+
+### Ключевые исправления:
+
+1. **Полный обход иерархии**:
+   - Теперь обрабатываются все узлы, включая DeviceDescriptionNode
+   - Поиск продолжается после любых промежуточных узлов
+
+2. **Гибкость**:
+   - Можно найти все ParameterType или только первый
+   - Работает с любой глубиной вложенности
+
+3. **Безопасность**:
+   - Проверки на null
+   - Корректная работа с интерфейсом _IDeviceDescriptionNode
+
+Для обработки только определенных ParameterType добавьте проверку:
+
+```csharp
+if (node is ParameterType parameterType && parameterType._Name == "НужноеИмя")
+{
+    parameterType.SetComponent();
+}
+```
+
+Это решение гарантирует, что:
+- Будет найден именно нужный ParameterType
+- Обход не прервется на промежуточных узлах
+- Сохранится оригинальная логика SetComponent()
+-
+-
+-
+-
+-
+-
+- Проблема в том, что ваш текущий код неправильно обходит иерархию объектов. Давайте исправим метод `TakeParameterType`, чтобы он точно находил нужный `ParameterType`:
 
 ```csharp
 public void TakeParameterType(DeviceDescription platformDescription)
