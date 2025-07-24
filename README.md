@@ -1,4 +1,4 @@
- private async Task LoadLibraries()
+        private async Task LoadLibraries()
         {
             DeviceDescription platformDescription = null;
             try
@@ -12,29 +12,12 @@
 
                     Thread.Sleep(1);
 
-                    ParameterType parameterType = null;
-                    object current = platformDescription.Device;
-
-                    int maxCounter = 20;
-                    while (current is _IDeviceDescriptionNode childNode && maxCounter-- > 0)
-                    {
-                        current = childNode._Children;
-                        var t = current.GetType().Name;
-                        if (current is ParameterType type)
-                        {
-                            parameterType = type;
-                            parameterType.SetComponent();
-                            break;
-                        }
-                    }
-
+                    TakeParameterType(platformDescription);
 
                     Application.Current.Dispatcher.Invoke(() =>
                     {
                         HwRoot.Add(platformDescription);
                     });
-
- 
                 }
             }
             catch (Exception ex)
@@ -42,6 +25,30 @@
             }
         }
 
+        public void TakeParameterType(DeviceDescription platformDescription)
+        {
+            ParameterType parameterType = null;
+            DeviceDescriptionDeviceCollection devices = platformDescription.Device;
+
+            int maxCounter = 20;
+            foreach (var device in devices)
+            {
+                if (device._Name == "[4096] E200-R17xx (1.0.0.0)")
+                {
+                    object current = device;
+                    while (current is _IDeviceDescriptionNode childNode && maxCounter-- > 0)
+                    {
+                        current = childNode._Children;
+                        if (current is ParameterType type)
+                        {
+                            parameterType = type;
+                            parameterType.SetComponent();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
 
 
     public interface _IDeviceDescriptionNode
