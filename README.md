@@ -1,3 +1,62 @@
+public class ParameterValueConverter : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (values == null || values.Length == 0)
+            return string.Empty;
+
+        // Обрабатываем первый переданный value (основное значение)
+        var primaryValue = values[0];
+        
+        // Если значение - массив ParameterValueType
+        if (primaryValue is ParameterValueType[] pvts && pvts.Length > 0)
+        {
+            var firstPvt = pvts[0];
+            if (firstPvt.Text != null && firstPvt.Text.Length > 0)
+            {
+                // Возвращаем пустую строку если текст "0", иначе объединяем через ";"
+                return firstPvt.Text[0] == "0" ? string.Empty : string.Join(";", firstPvt.Text);
+            }
+            return string.Empty;
+        }
+
+        // Если одиночный ParameterValueType
+        if (primaryValue is ParameterValueType pvt)
+        {
+            if (pvt.Text != null && pvt.Text.Length > 0)
+            {
+                return pvt.Text[0] == "0" ? string.Empty : string.Join(";", pvt.Text);
+            }
+            return string.Empty;
+        }
+
+        // Для всех остальных случаев возвращаем первый элемент или пустую строку
+        return values[0]?.ToString() ?? string.Empty;
+    }
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
+    {
+        var str = value as string;
+        if (!string.IsNullOrEmpty(str))
+        {
+            return new object[] 
+            {
+                new[] 
+                {
+                    new ParameterValueType() 
+                    { 
+                        Text = str.Split(';') 
+                    }
+                }
+            };
+        }
+        return new object[] { null };
+    }
+}
+
+
+
+
 <DataTemplate>
     <DataTemplate.Resources>
         <local:ParameterValueConverter x:Key="parameterValueConverter"/>
