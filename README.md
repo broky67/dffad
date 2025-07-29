@@ -1,227 +1,66 @@
-public class ParameterValueConverter : IMultiValueConverter
-{
-    public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
-    {
-        if (values == null || values.Length == 0)
-            return string.Empty;
-
-        // Обрабатываем первый переданный value (основное значение)
-        var primaryValue = values[0];
-        
-        // Если значение - массив ParameterValueType
-        if (primaryValue is ParameterValueType[] pvts && pvts.Length > 0)
+public void SetComponent()
         {
-            var firstPvt = pvts[0];
-            if (firstPvt.Text != null && firstPvt.Text.Length > 0)
-            {
-                // Возвращаем пустую строку если текст "0", иначе объединяем через ";"
-                return firstPvt.Text[0] == "0" ? string.Empty : string.Join(";", firstPvt.Text);
+            if (this is ParameterType parameterType)
+            { 
+                var cleanTypeName = ExtractValidTypeName(parameterType.type);
+                if (cleanTypeName == null)
+                    return;
+
+                var deviceDescription = FindParentDeviceDescription();
+                if (deviceDescription == null)
+                    return;
+
+                var componentCollection = FindComponentCollection(deviceDescription, cleanTypeName, parameterType);
+                if (componentCollection == null)
+                    throw new InvalidOperationException($"Тип не найден в DescriptionTypes");
+
+                parameterType.Component = componentCollection;
             }
-            return string.Empty;
         }
 
-        // Если одиночный ParameterValueType
-        if (primaryValue is ParameterValueType pvt)
+        private string ExtractValidTypeName(string fullTypeName)
         {
-            if (pvt.Text != null && pvt.Text.Length > 0)
-            {
-                return pvt.Text[0] == "0" ? string.Empty : string.Join(";", pvt.Text);
-            }
-            return string.Empty;
-        }
-
-        // Для всех остальных случаев возвращаем первый элемент или пустую строку
-        return values[0]?.ToString() ?? string.Empty;
-    }
-
-    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
-    {
-        var str = value as string;
-        if (!string.IsNullOrEmpty(str))
-        {
-            return new object[] 
-            {
-                new[] 
+            const string prefix = "local:";
+            if (fullTypeName.StartsWith(prefix))
+            { 
+                var cleanTypeName = fullTypeName.Substring(prefix.Length);
+                if (cleanTypeName == "T_E295x_Threshold" || cleanTypeName == "T_R17xx_Delay")
                 {
-                    new ParameterValueType() 
-                    { 
-                        Text = str.Split(';') 
-                    }
+                    return cleanTypeName;
                 }
-            };
-        }
-        return new object[] { null };
-    }
-}
-
-
-
-
-<DataTemplate>
-    <DataTemplate.Resources>
-        <local:ParameterValueConverter x:Key="parameterValueConverter"/>
-    </DataTemplate.Resources>
-    
-    <TextBlock>
-        <TextBlock.Text>
-            <MultiBinding Converter="{StaticResource parameterValueConverter}">
-                <Binding Path="Tag.Default"/>
-                <Binding Path="Tag.Component.Value"/> <!-- Дополнительные значения при необходимости -->
-            </MultiBinding>
-        </TextBlock.Text>
-    </TextBlock>
-</DataTemplate>
-
-
-
-<DataTemplate.Resources>
-                <local:ParameterValueConverter x:Key="parameterValueConverter"/>
-            </DataTemplate.Resources>
-            <TextBlock Text="{Binding Tag.Tag.Default, Converter={StaticResource parameterValueConverter}, UpdateSourceTrigger=PropertyChanged}"/>
-        </DataTemplate>
-        <DataTemplate x:Key="DefaultValueEditTemplate">
-            <DataTemplate.Resources>
-                <local:ParameterValueConverter x:Key="parameterValueConverter"/>
-            </DataTemplate.Resources>
-            <TextBox Text="{Binding Tag.Tag.Default, Converter={StaticResource parameterValueConverter}, UpdateSourceTrigger=PropertyChanged}"/>
-        </DataTemplate>
-
- class ParameterValueConverter : IMultiValueConverter
-    {
-        /*public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            // Предложение сделать default string.empty если text = 0
-            // потому что local: тип будет тоже вместе с 0
-            if (value is ParameterValueType[] pvts)
-                if (pvts != null && pvts.Length > 0)
-                {
-                    foreach (var pvt in pvts)
-                    {
-                        if (pvt.Text != null)
-                            if (pvt.Text[0] == "0")
-                                return string.Empty;
-                            else
-                                return string.Join(";", pvt.Text);
-                        else
-                            return string.Empty;
-                    }
-                }
-
-            if (value is ParameterValueType pvType)
-            {
-                if (pvType.Text != null)
-                    return string.Join(";", pvType.Text); ;
+                else
+                    return null;
             }
-            return value;
+            else
+                return null;
         }
 
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        private DeviceDescription FindParentDeviceDescription()
         {
-            var str = value as string;
-            if (!string.IsNullOrEmpty(str))
+            object current = this;
+            var iterationsLeft = 20;
+
+            while (current is _IDeviceDescriptionNode node && iterationsLeft-- > 0)
             {
-                return new[] { new ParameterValueType() { Text = str.Split(';') } };
+                if (node._Parent is DeviceDescription description)
+                    return description;
+
+                current = node._Parent;
             }
             return null;
-        }*/
-        public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
-        {
-            throw new NotImplementedException();
         }
 
-        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
+        private TypedefTypeComponentCollection FindComponentCollection(DeviceDescription device, string typeName, ParameterType parameterType)
         {
-            throw new NotImplementedException();
+            var matchingItem = device.Types.Items.FirstOrDefault(item => item._Name.Contains(typeName));
+
+            if (matchingItem is StructdefType structDef)
+            {
+                parameterType.Component = structDef.Component;
+            }
+            else if (matchingItem is BitfielddefType bitDef)
+            {
+                parameterType.Component = bitDef.Component;
+            }
+            return null;
         }
-    }
-Вот улучшенная версия без использования интерфейсов, с сохранением читаемости и разделением на методы:
-
-```csharp
-public void SetComponent()
-{
-    if (this is not ParameterType parameterType)
-        return;
-
-    var cleanTypeName = ExtractValidTypeName(parameterType.type);
-    if (cleanTypeName == null)
-        return;
-
-    var deviceDescription = FindParentDeviceDescription();
-    if (deviceDescription == null)
-        return;
-
-    var componentCollection = FindComponentCollection(deviceDescription, cleanTypeName);
-    if (componentCollection == null)
-        throw new InvalidOperationException($"Тип {cleanTypeName} не найден в DescriptionTypes");
-
-    parameterType.Component = componentCollection;
-}
-
-private string ExtractValidTypeName(string fullTypeName)
-{
-    const string prefix = "local:";
-    if (!fullTypeName.StartsWith(prefix))
-        return null;
-
-    var cleanTypeName = fullTypeName[prefix.Length..];
-    return cleanTypeName is "T_E295x_Threshold" or "T_R17xx_Delay" ? cleanTypeName : null;
-}
-
-private DeviceDescription FindParentDeviceDescription()
-{
-    var current = this;
-    var iterationsLeft = 20;
-
-    while (current is _IDeviceDescriptionNode node && iterationsLeft-- > 0)
-    {
-        if (node._Parent is DeviceDescription description)
-            return description;
-
-        current = node._Parent;
-    }
-    return null;
-}
-
-private TypedefTypeComponentCollection FindComponentCollection(DeviceDescription device, string typeName)
-{
-    var matchingItem = device.Types.Items.FirstOrDefault(item => item._Name == typeName);
-
-    return matchingItem switch
-    {
-        StructdefType structDef => structDef.Component,
-        BitfielddefType bitDef => bitDef.Component,
-        _ => null
-    };
-}
-```
-
-### Ключевые улучшения:
-
-1. **Разделение на логические методы**:
-   - `ExtractValidTypeName` - извлекает и проверяет тип
-   - `FindParentDeviceDescription` - находит родительское устройство
-   - `FindComponentCollection` - ищет коллекцию компонентов
-
-2. **Упрощенный pattern matching**:
-   - Используется `switch` выражение вместо if-else
-   - Нет необходимости в интерфейсах
-
-3. **Безопасность**:
-   - Проверка на null
-   - Защита от бесконечного цикла
-   - Четкие сообщения об ошибках
-
-4. **Читаемость**:
-   - Каждый метод делает одну конкретную задачу
-   - Понятные названия переменных
-   - Минимум вложенности
-
-5. **Производительность**:
-   - Использование `[prefix.Length..]` вместо `Substring`
-   - Ранний выход при невалидных данных
-
-Этот вариант сохраняет всю функциональность оригинала, но делает код:
-- Более понятным
-- Легче для модификации
-- Более устойчивым к ошибкам
-- Проще для тестирования
