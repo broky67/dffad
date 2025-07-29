@@ -1,3 +1,63 @@
+  <DataTemplate.Resources>
+                <local:ParameterValueConverter x:Key="parameterValueConverter"/>
+            </DataTemplate.Resources>
+            <TextBlock Text="{Binding Tag.Tag.Default, Converter={StaticResource parameterValueConverter}, UpdateSourceTrigger=PropertyChanged}"/>
+        </DataTemplate>
+        <DataTemplate x:Key="DefaultValueEditTemplate">
+            <DataTemplate.Resources>
+                <local:ParameterValueConverter x:Key="parameterValueConverter"/>
+            </DataTemplate.Resources>
+            <TextBox Text="{Binding Tag.Tag.Default, Converter={StaticResource parameterValueConverter}, UpdateSourceTrigger=PropertyChanged}"/>
+        </DataTemplate>
+
+ class ParameterValueConverter : IMultiValueConverter
+    {
+        /*public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            // Предложение сделать default string.empty если text = 0
+            // потому что local: тип будет тоже вместе с 0
+            if (value is ParameterValueType[] pvts)
+                if (pvts != null && pvts.Length > 0)
+                {
+                    foreach (var pvt in pvts)
+                    {
+                        if (pvt.Text != null)
+                            if (pvt.Text[0] == "0")
+                                return string.Empty;
+                            else
+                                return string.Join(";", pvt.Text);
+                        else
+                            return string.Empty;
+                    }
+                }
+
+            if (value is ParameterValueType pvType)
+            {
+                if (pvType.Text != null)
+                    return string.Join(";", pvType.Text); ;
+            }
+            return value;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            var str = value as string;
+            if (!string.IsNullOrEmpty(str))
+            {
+                return new[] { new ParameterValueType() { Text = str.Split(';') } };
+            }
+            return null;
+        }*/
+        public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+
+        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
 Вот улучшенная версия без использования интерфейсов, с сохранением читаемости и разделением на методы:
 
 ```csharp
