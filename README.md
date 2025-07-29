@@ -1,4 +1,21 @@
-  <DataTemplate.Resources>
+<DataTemplate>
+    <DataTemplate.Resources>
+        <local:ParameterValueConverter x:Key="parameterValueConverter"/>
+    </DataTemplate.Resources>
+    
+    <TextBlock>
+        <TextBlock.Text>
+            <MultiBinding Converter="{StaticResource parameterValueConverter}">
+                <Binding Path="Tag.Default"/>
+                <Binding Path="Tag.Component.Value"/> <!-- Дополнительные значения при необходимости -->
+            </MultiBinding>
+        </TextBlock.Text>
+    </TextBlock>
+</DataTemplate>
+
+
+
+<DataTemplate.Resources>
                 <local:ParameterValueConverter x:Key="parameterValueConverter"/>
             </DataTemplate.Resources>
             <TextBlock Text="{Binding Tag.Tag.Default, Converter={StaticResource parameterValueConverter}, UpdateSourceTrigger=PropertyChanged}"/>
