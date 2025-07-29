@@ -1,127 +1,91 @@
+Вот улучшенная версия без использования интерфейсов, с сохранением читаемости и разделением на методы:
+
+```csharp
 public void SetComponent()
 {
-    if (!(this is ParameterType parameter)) 
+    if (this is not ParameterType parameterType)
         return;
 
-    if (!TryGetValidType(parameter.type, out var typeName))
+    var cleanTypeName = ExtractValidTypeName(parameterType.type);
+    if (cleanTypeName == null)
         return;
 
     var deviceDescription = FindParentDeviceDescription();
     if (deviceDescription == null)
         return;
 
-    var matchingType = FindMatchingType(deviceDescription, typeName);
-    if (matchingType == null)
-        throw new NullReferenceException($"Тип {typeName} не найден в DescriptionTypes");
+    var componentCollection = FindComponentCollection(deviceDescription, cleanTypeName);
+    if (componentCollection == null)
+        throw new InvalidOperationException($"Тип {cleanTypeName} не найден в DescriptionTypes");
 
-    AssignComponents(parameter, matchingType);
+    parameterType.Component = componentCollection;
 }
 
-// Вспомогательные методы
-private bool TryGetValidType(string fullTypeName, out string cleanTypeName)
+private string ExtractValidTypeName(string fullTypeName)
 {
     const string prefix = "local:";
-    cleanTypeName = null;
-    
     if (!fullTypeName.StartsWith(prefix))
-        return false;
+        return null;
 
-    cleanTypeName = fullTypeName.Substring(prefix.Length);
-    return cleanTypeName == "T_E295x_Threshold" || 
-           cleanTypeName == "T_R17xx_Delay";
+    var cleanTypeName = fullTypeName[prefix.Length..];
+    return cleanTypeName is "T_E295x_Threshold" or "T_R17xx_Delay" ? cleanTypeName : null;
 }
 
 private DeviceDescription FindParentDeviceDescription()
 {
-    object current = this;
-    int maxIterations = 20;
-    
-    while (current is _IDeviceDescriptionNode node && maxIterations-- > 0)
+    var current = this;
+    var iterationsLeft = 20;
+
+    while (current is _IDeviceDescriptionNode node && iterationsLeft-- > 0)
     {
         if (node._Parent is DeviceDescription description)
             return description;
-            
+
         current = node._Parent;
     }
     return null;
 }
 
-private _DeviceDescriptionNode FindMatchingType(DeviceDescription device, string typeName)
+private TypedefTypeComponentCollection FindComponentCollection(DeviceDescription device, string typeName)
 {
-    return device.Types.Items
-        .FirstOrDefault(x => x._Name == typeName);
-}
+    var matchingItem = device.Types.Items.FirstOrDefault(item => item._Name == typeName);
 
-private void AssignComponents(ParameterType parameter, _DeviceDescriptionNode typeNode)
-{
-    switch (typeNode)
+    return matchingItem switch
     {
-        case StructdefType structDef:
-            parameter.Component = structDef.Component;
-            break;
-        case BitfielddefType bitDef:
-            parameter.Component = bitDef.Component;
-            break;
-    }
+        StructdefType structDef => structDef.Component,
+        BitfielddefType bitDef => bitDef.Component,
+        _ => null
+    };
 }
+```
 
+### Ключевые улучшения:
 
+1. **Разделение на логические методы**:
+   - `ExtractValidTypeName` - извлекает и проверяет тип
+   - `FindParentDeviceDescription` - находит родительское устройство
+   - `FindComponentCollection` - ищет коллекцию компонентов
 
+2. **Упрощенный pattern matching**:
+   - Используется `switch` выражение вместо if-else
+   - Нет необходимости в интерфейсах
 
+3. **Безопасность**:
+   - Проверка на null
+   - Защита от бесконечного цикла
+   - Четкие сообщения об ошибках
 
+4. **Читаемость**:
+   - Каждый метод делает одну конкретную задачу
+   - Понятные названия переменных
+   - Минимум вложенности
 
-public void SetComponent()
-        {
-            if (this is ParameterType parameterType)
-            {
-                var paramTypeField = parameterType.type;
+5. **Производительность**:
+   - Использование `[prefix.Length..]` вместо `Substring`
+   - Ранний выход при невалидных данных
 
-                const string prefix = "local:";
-                var paramTypeFieldWithoutLocal = paramTypeField.Substring(prefix.Length);
-                bool isPrefix = paramTypeField.StartsWith(prefix);
-				// to think about complex types that don't exist in DescriptionTypes but exist in DeviceDescription and have local in their name
-                while (isPrefix && (paramTypeFieldWithoutLocal == "T_E295x_Threshold" || paramTypeFieldWithoutLocal == "T_R17xx_Delay"))
-                {
-                    DeviceDescription devDescNode = null;
-                    object current = this;
-
-                    int maxCounter = 20;
-                    while (current is _IDeviceDescriptionNode parentNode && maxCounter-- > 0)
-                    {
-                        current = parentNode._Parent;
-                        if (current is DeviceDescription desc)
-                        {
-                            devDescNode = desc;
-                            break;
-                        }
-                    }
-
-                    var descriptonTypes = devDescNode.Types;
-                    var items = descriptonTypes.Items;
-                    var constStringName = string.Empty;
-                    try
-                    {
-                        constStringName = items.FirstOrDefault(x => x._Name.Contains(paramTypeFieldWithoutLocal))._Name;
-
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new NullReferenceException("Такого имени нет в DescriptionTypes", ex);
-                    }
-
-                    var matchingItem = items.FirstOrDefault(x => x._Name == constStringName);
-                    var typ = matchingItem.GetType().Name;
-
-                    if (matchingItem is StructdefType structDef)
-                    {
-                        parameterType.Component = structDef.Component;
-                        break;
-                    }
-                    else if (matchingItem is BitfielddefType bitDef)
-                    {
-                        parameterType.Component = bitDef.Component;
-                        break;
-                    }
-                }
-            }
-        }
+Этот вариант сохраняет всю функциональность оригинала, но делает код:
+- Более понятным
+- Легче для модификации
+- Более устойчивым к ошибкам
+- Проще для тестирования
