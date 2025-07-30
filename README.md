@@ -1,4 +1,220 @@
-Для реализации Drag and Drop между `ProgramInstance` и `Algorithm` в вашем новом проекте, вам нужно адаптировать ViewModel'и. Вот как это можно сделать:
+Вот полная реализация Drag and Drop системы для вашего проекта с тремя классами: `Drag`, `Drop` и `DropController`, адаптированная для перемещения `ProgramInstance` в `Algorithm`:
+
+### 1. Drag Behavior (`ProgramDrag.cs`)
+
+```csharp
+public class ProgramDrag : DragBehaviorBase<TreeListView, ProgramLibraryViewModel>
+{
+    protected override bool CanDrag(object dragData)
+    {
+        // Разрешаем перетаскивание только ProgramInstance
+        return dragData is ProgramInstance;
+    }
+
+    protected override IDataObject CombineDragData(object dragData)
+    {
+        return base.CombineDragData(dragData);
+    }
+
+    protected override void OnDragStarted(object dragData)
+    {
+        base.OnDragStarted(dragData);
+    }
+}
+```
+
+### 2. Drop Behavior (`AlgorithmDrop.cs`)
+
+```csharp
+public class AlgorithmDrop : DropBehaviorBase<TreeListView, AlgorithmEditorViewModel>
+{
+    private TreeListViewItem _targetItem;
+    private DropController _dropController;
+
+    public AlgorithmDrop()
+    {
+        _dropController = new DropController();
+    }
+
+    public string Message
+    {
+        get => (string)GetValue(MessageProperty);
+        set => SetValue(MessageProperty, value);
+    }
+
+    public static readonly DependencyProperty MessageProperty =
+        DependencyProperty.Register("Message", typeof(string), typeof(AlgorithmDrop), 
+            new PropertyMetadata(default(string)));
+
+    protected override bool CanDrop(object dragData, DragEventArgs e)
+    {
+        _targetItem = UIHelper.GetItemContainerFromPointInTreeControl<TreeListViewItem>(
+            AssociatedObject, e.GetPosition(AssociatedObject));
+        
+        if (_targetItem == null) return false;
+
+        var programInstance = dragData as ProgramInstance;
+        var targetNode = _targetItem.DataContext as FnAlgorithm;
+
+        if (programInstance == null || targetNode == null) return false;
+
+        Message = _dropController.GetDropMessage(programInstance, targetNode);
+        return _dropController.CanDrop(programInstance, targetNode);
+    }
+
+    protected override DropAdorner OnInitializeDropAdorner(DragEventArgs e)
+    {
+        if (_targetItem == null) return null;
+
+        var adornerLayer = AdornerLayer.GetAdornerLayer(AssociatedObject);
+        if (adornerLayer != null)
+        {
+            var size = new Size(_targetItem.ActualWidth, _targetItem.ActualHeight);
+            return new AlgorithmDropAdorner(_targetItem, adornerLayer, size);
+        }
+        return null;
+    }
+
+    protected override bool DoDropOperation(object dragData, DragEventArgs e)
+    {
+        if (_targetItem == null) return false;
+
+        var programInstance = dragData as ProgramInstance;
+        var algorithm = _targetItem.DataContext as FnAlgorithm;
+
+        return _dropController.Drop(programInstance, algorithm);
+    }
+
+    private class AlgorithmDropAdorner : DropAdorner
+    {
+        private readonly Size _size;
+
+        public AlgorithmDropAdorner(UIElement adornedElement, AdornerLayer adornerLayer, Size size) 
+            : base(adornedElement, adornerLayer)
+        {
+            _size = size;
+        }
+
+        protected override Point[] DetermineRectPoints(double width, double height, double padding = 0)
+        {
+            return base.DetermineRectPoints(_size.Width, _size.Height);
+        }
+    }
+}
+```
+
+### 3. Drop Controller (`DropController.cs`)
+
+```csharp
+public class DropController
+{
+    public string GetDropMessage(ProgramInstance program, FnAlgorithm algorithm)
+    {
+        if (program == null || algorithm == null)
+            return "Invalid operation";
+
+        if (algorithm.PouLinks.Any(l => l.Name == program.Name))
+            return $"Replace existing link to {program.Name}";
+
+        return $"Add link to {program.Name}";
+    }
+
+    public bool CanDrop(ProgramInstance program, FnAlgorithm algorithm)
+    {
+        if (program == null || algorithm == null)
+            return false;
+
+        // Дополнительные проверки можно добавить здесь
+        return true;
+    }
+
+    public bool Drop(ProgramInstance program, FnAlgorithm algorithm)
+    {
+        if (!CanDrop(program, algorithm))
+            return false;
+
+        // Удаляем существующую ссылку если есть
+        var existingLink = algorithm.PouLinks.FirstOrDefault(l => l.Name == program.Name);
+        if (existingLink != null)
+        {
+            algorithm.PouLinks.Remove(existingLink);
+        }
+
+        // Создаем новую ссылку
+        var pouLink = new FnPouLink(program.Name)
+        {
+            Type = program.Type,
+            FNode = program.FNode,
+            // Дополнительные свойства при необходимости
+        };
+
+        algorithm.PouLinks.Add(pouLink);
+        return true;
+    }
+}
+```
+
+### 4. Регистрация в XAML
+
+```xml
+<UserControl.Resources>
+    <!-- Шаблон для визуализации перетаскивания -->
+    <DataTemplate x:Key="DragAdornerTemplate">
+        <Border Background="#AAFFFFFF" BorderBrush="Gray" BorderThickness="1" Padding="5">
+            <TextBlock Text="{Binding Name}" FontWeight="Bold"/>
+        </Border>
+    </DataTemplate>
+</UserControl.Resources>
+
+<!-- TreeListView с ProgramInstance -->
+<TreeListView x:Name="ProgramsView"
+              behaviors:DragBehavior.DragTemplate="{StaticResource DragAdornerTemplate}"
+              behaviors:DragBehavior.IsEnabled="True"
+              ItemsSource="{Binding ProgramInstances}">
+    <!-- Колонки -->
+</TreeListView>
+
+<!-- TreeListView с Algorithm -->
+<TreeListView x:Name="AlgorithmView"
+              behaviors:DropBehavior.IsEnabled="True"
+              behaviors:DropBehavior.Message="{Binding DropMessage, Mode=OneWay}"
+              ItemsSource="{Binding CurrentAlgorithm.PouLinks}">
+    <!-- Колонки -->
+</TreeListView>
+```
+
+### Основные особенности реализации:
+
+1. **Разделение ответственности**:
+   - `ProgramDrag` - только инициирует перетаскивание
+   - `AlgorithmDrop` - управляет визуальной частью и взаимодействует с контроллером
+   - `DropController` - содержит бизнес-логику операции Drop
+
+2. **Гибкость**:
+   - Контроллер можно легко расширить для дополнительных проверок
+   - Поддержка замены существующих ссылок
+   - Возможность добавления дополнительной логики при Drop
+
+3. **Безопасность**:
+   - Проверки на null
+   - Подтверждение операций
+   - Четкое разделение View и логики
+
+4. **Визуальная обратная связь**:
+   - Сообщения о текущей операции
+   - Adorner при перетаскивании
+   - Возможность легко изменить визуальное представление
+
+Для использования этой системы вам нужно:
+1. Подключить behaviors к вашим TreeListView
+2. Установить соответствующие DataContext (ваши ViewModel'и)
+3. Реализовать необходимые свойства в ViewModel'ях (ProgramInstances, CurrentAlgorithm и т.д.)
+4.
+5.
+6.
+7.
+8.
+9. Для реализации Drag and Drop между `ProgramInstance` и `Algorithm` в вашем новом проекте, вам нужно адаптировать ViewModel'и. Вот как это можно сделать:
 
 ### 1. Замена ViewModel'ей
 
@@ -72,25 +288,7 @@ public class ProgramInstanceDrag : DragBehaviorBase<TreeListView, ProgramLibrary
 
 **AlgorithmDrop.cs**:
 ```csharp
-public class AlgorithmDrop : DropBehaviorBase<TreeListView, AlgorithmEditorViewModel>
-{
-    protected override bool DoDropOperation(object dragData, DragEventArgs e)
-    {
-        var programInstance = dragData as ProgramInstance;
-        if (programInstance == null) return false;
 
-        // Получаем текущий алгоритм из ViewModel
-        var algorithm = AssociatedViewModel.CurrentAlgorithm;
-        if (algorithm == null) return false;
-
-        // Добавляем ссылку на программу в алгоритм
-        AssociatedViewModel.AddPouLinkToAlgorithm(programInstance);
-        return true;
-    }
-    
-    // Остальная реализация аналогична предыдущему примеру
-}
-```
 
 ### 4. Регистрация в XAML
 
