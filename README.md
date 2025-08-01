@@ -1,3 +1,29 @@
+                <TextBox.Text>
+                    <MultiBinding Converter="{StaticResource parameterValueConverter}"
+                                  Mode="OneWay">
+                        <Binding Path="Tag.Tag.Component"/>
+                        <Binding Path="Tag.Tag.Default"/>
+                    </MultiBinding>
+                </TextBox.Text>
+
+
+
+
+
+        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
+        {
+            var str = value as string;
+            if (!string.IsNullOrEmpty(str))
+            {
+                return new object[]
+                {     
+                    new ParameterValueType() { Text = str.Split(';') }      
+                };
+            }
+            return null;
+        }
+
+
 Проблема возникает из-за конфликта типов между `FnAlgorithm` и `ISCLE_Node`. Вот исправленная версия метода `CanDrop` с правильной проверкой типов:
 
 ```csharp
