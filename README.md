@@ -1,4 +1,109 @@
- protected override bool CanDrop(object dragData, DragEventArgs e)
+Проблема возникает из-за конфликта типов между `FnAlgorithm` и `ISCLE_Node`. Вот исправленная версия метода `CanDrop` с правильной проверкой типов:
+
+```csharp
+protected override bool CanDrop(object dragData, DragEventArgs e)
+{
+    // Получаем элемент дерева под курсором
+    _tlvi = UIHelper.GetItemContainerFromPointInTreeControl<TreeListViewItem>(
+        AssociatedObject, e.GetPosition(AssociatedObject));
+    if (_tlvi == null)
+        return false;
+
+    _tlviVm = _tlvi.DataContext as SCLE_NodeViewModel;
+    if (_tlviVm == null)
+        return false;
+
+    var list = dragData as IList;
+
+    // Специальная обработка для Algorithm
+    if (_tlviVm is SCLE_FnAlgorithmViewModel algorithmVm)
+    {
+        var pou = (list != null && list.Count == 1) 
+            ? list[0] as SCLE_ProjectPou 
+            : dragData as SCLE_ProjectPou;
+
+        if (pou != null)
+        {
+            // Проверяем что POU еще не добавлен в Algorithm
+            return !algorithmVm.PouLinks.Any(x => x.Name == pou.Name);
+        }
+        return false;
+    }
+
+    // Оригинальная логика для ISCLE_Node
+    if (list != null && list.Count > 0 && list[0] is ISCLE_Node)
+    {
+        if (!e.AllowedEffects.HasFlag(DragDropEffects.Move))
+            return false;
+
+        if (!(_tlviVm.Tag is ISCLE_Node node))
+            return false;
+
+        // Проверяем что перетаскиваемые элементы не содержатся в целевом узле
+        if (node.GetNodes(false).Intersect(list.Cast<ISCLE_Node>()).Any())
+            return false;
+
+        // Проверяем что целевой узел может принять все перетаскиваемые элементы
+        if (!list.Cast<ISCLE_Node>().All(x => node.CanAddNode(x)))
+            return false;
+
+        if (!(_tlviVm.CanUserAddNode && _tlviVm.CanUserRemoveNode))
+            return false;
+
+        if (list.Contains(node))
+            return false;
+
+        return true;
+    }
+
+    return HasDropAction(_tlviVm, e, out IDropAction action);
+}
+```
+
+Ключевые изменения:
+
+1. Разделил проверки для `SCLE_FnAlgorithmViewModel` и `ISCLE_Node` на два отдельных блока
+2. Проверяю тип ViewModel перед проверкой `ISCLE_Node`:
+   ```csharp
+   if (_tlviVm is SCLE_FnAlgorithmViewModel algorithmVm)
+   {
+       // Обработка для Algorithm
+   }
+   ```
+3. Убрал преобразование `Tag` к `ISCLE_Node` для случая с Algorithm
+
+4. Сохранил всю оригинальную логику для `ISCLE_Node`
+
+Дополнительно нужно убедиться, что:
+
+1. `SCLE_FnAlgorithmViewModel` действительно представляет `FnAlgorithm`
+2. `SCLE_ProjectPou` соответствует вашей модели Program (POU)
+3. `PouLinks` в `SCLE_FnAlgorithmViewModel` содержит корректные данные
+
+Если `FnAlgorithm` должен реализовывать `ISCLE_Node`, нужно:
+1. Добавить интерфейс к классу:
+   ```csharp
+   public class FnAlgorithm : ISCLE_Node
+   {
+       // Реализация методов интерфейса
+   }
+   ```
+2. Или создать адаптер, который будет реализовывать `ISCLE_Node` для `FnAlgorithm`
+
+Такой подход обеспечит:
+- Отсутствие ошибок приведения типов
+- Четкое разделение логики для разных типов узлов
+- Сохранение всей существующей функциональности
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-   protected override bool CanDrop(object dragData, DragEventArgs e)
         {
             // gets the tree node where mouse
             _tlvi = UIHelper.GetItemContainerFromPointInTreeControl<TreeListViewItem>(AssociatedObject, e.GetPosition(AssociatedObject));
