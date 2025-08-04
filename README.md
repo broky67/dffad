@@ -1,4 +1,118 @@
- Проблема в вашей реализации связана с несколькими аспектами. Давайте разберём их по порядку:
+Понял проблему. Вам нужно правильно преобразовать строку обратно в два разных типа: `ParameterValueType[]` (для Default) и `TypeDefComponentCollection` (для Component). Давайте переработаем `ConvertBack` с учетом этих типов.
+
+### Исправленная реализация ConvertBack:
+
+```csharp
+public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
+{
+    var str = value as string;
+    if (string.IsNullOrEmpty(str))
+    {
+        return new object[] { Binding.DoNothing, Binding.DoNothing };
+    }
+
+    // Разбиваем строку по разделителю
+    var stringValues = str.Split(';');
+
+    // 1. Создаем ParameterValueType[] для Default
+    var defaultValues = stringValues
+        .Select(s => new ParameterValueType { Text = s.Trim() })
+        .ToArray();
+
+    // 2. Создаем TypeDefComponentCollection для Component
+    var componentCollection = new TypeDefComponentCollection();
+    foreach (var strValue in stringValues)
+    {
+        // Предполагаем, что у вас есть метод создания компонента из строки
+        var component = CreateComponentFromString(strValue.Trim());
+        componentCollection.Add(component);
+    }
+
+    return new object[] { componentCollection, defaultValues };
+}
+
+// Вспомогательный метод (адаптируйте под вашу реальную логику)
+private ComponentType CreateComponentFromString(string value)
+{
+    return new ComponentType { /* инициализация полей из строки */ };
+}
+```
+
+### Уточнения по типам:
+
+1. **Для `Default` (ParameterValueType[])**:
+   - Создаем массив объектов `ParameterValueType`, где каждый элемент соответствует части разделенной строки
+
+2. **Для `Component` (TypeDefComponentCollection)**:
+   - Создаем коллекцию компонентов
+   - Каждый компонент должен быть создан на основе строкового значения
+   - Предполагается, что у вас есть способ создания компонента из строки
+
+### Важные замечания:
+
+1. Если `TypeDefComponentCollection` требует особого формата данных:
+   ```csharp
+   // Альтернатива, если компоненты создаются иначе
+   var componentCollection = new TypeDefComponentCollection
+   {
+       new ComponentType { Property1 = stringValues[0], Property2 = 0 },
+       // ...
+   };
+   ```
+
+2. Если разделитель может быть частью значения:
+   - Нужно реализовать более сложную логику парсинга
+   - Например, экранирование разделителей или использование другого формата
+
+3. Для обработки ошибок добавьте проверки:
+   ```csharp
+   try
+   {
+       // логика преобразования
+   }
+   catch
+   {
+       return new object[] { Binding.DoNothing, Binding.DoNothing };
+   }
+   ```
+
+4. Если порядок элементов важен:
+   - Убедитесь, что `stringValues` обрабатывается в правильном порядке
+   - Возможно, нужно сортировать или фильтровать значения
+
+### Пример использования в XAML (без изменений):
+```xml
+<TextBox>
+    <TextBox.Text>
+        <MultiBinding Converter="{StaticResource parameterValueConverter}" Mode="TwoWay">
+            <Binding Path="Tag.Tag.Component"/>
+            <Binding Path="Tag.Tag.Default"/>
+        </MultiBinding>
+    </TextBox.Text>
+</TextBox>
+```
+
+Эта реализация теперь должна корректно работать с:
+- TwoWay привязкой
+- Разными типами для Component и Default
+- Преобразованием строки в сложные типы данных
+
+Если вам нужно настроить какие-то аспекты преобразования (например, особый формат для компонентов), уточните - скорректирую решение.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Проблема в вашей реализации связана с несколькими аспектами. Давайте разберём их по порядку:
 
 ### Основные проблемы:
 
