@@ -1,3 +1,18 @@
+        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
+        {
+            var str = value as string;
+            if (!string.IsNullOrEmpty(str))
+            {
+                return new object[]
+                {
+                    new[] { new ParameterValueType() { Text = str.Split(';') } },
+                    new[] { new ComponentValueType() { Text = str.Split(';') } },
+                };
+            }
+            return null;
+        }
+
+
 Понял проблему. Вам нужно правильно преобразовать строку обратно в два разных типа: `ParameterValueType[]` (для Default) и `TypeDefComponentCollection` (для Component). Давайте переработаем `ConvertBack` с учетом этих типов.
 
 ### Исправленная реализация ConvertBack:
