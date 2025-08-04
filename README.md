@@ -1,4 +1,250 @@
-    class ParameterValueConverter : IMultiValueConverter
+ Проблема в вашей реализации связана с несколькими аспектами. Давайте разберём их по порядку:
+
+### Основные проблемы:
+
+1. **Несоответствие Convert и ConvertBack**:
+   - `Convert` возвращает `string`, но `ConvertBack` возвращает `string[]`, что не соответствует ожидаемому формату для MultiBinding.
+
+2. **Неправильная структура возвращаемого значения в ConvertBack**:
+   - Для MultiBinding ConvertBack должен возвращать массив объектов, соответствующий количеству и типам исходных привязок.
+
+3. **Дублирование привязок в TextBox**:
+   - Вы дважды привязываетесь к `Tag.Tag.Default` в TextBox, что не имеет смысла.
+
+### Исправленный конвертер:
+
+```csharp
+public class ParameterValueConverter : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+    {
+        // Ваша существующая логика Convert остается без изменений
+        // ...
+    }
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
+    {
+        var str = value as string;
+        if (!string.IsNullOrEmpty(str))
+        {
+            // Создаем массив значений для всех привязанных свойств
+            return new object[]
+            {
+                new ParameterValueType { Text = str.Split(';') }, // Для первого binding
+                new ParameterValueType { Text = str.Split(';') }  // Для второго binding
+            };
+        }
+        
+        return new object[] 
+        {
+            Binding.DoNothing,
+            Binding.DoNothing
+        };
+    }
+}
+```
+
+### Исправленный XAML:
+
+Для TextBlock (только для отображения, TwoWay не нужен):
+```xml
+<TextBlock>
+    <TextBlock.Text>
+        <MultiBinding Converter="{StaticResource parameterValueConverter}" Mode="OneWay">
+            <Binding Path="Tag.Tag.Component"/>
+            <Binding Path="Tag.Tag.Default"/>
+        </MultiBinding>
+    </TextBlock.Text>
+</TextBlock>
+```
+
+Для TextBox (редактирование):
+```xml
+<TextBox>
+    <TextBox.Text>
+        <MultiBinding Converter="{StaticResource parameterValueConverter}" Mode="TwoWay" UpdateSourceTrigger="LostFocus">
+            <Binding Path="Tag.Tag.Component" Mode="TwoWay"/>
+            <Binding Path="Tag.Tag.Default" Mode="TwoWay"/>
+        </MultiBinding>
+    </TextBox.Text>
+</TextBox>
+```
+
+### Дополнительные рекомендации:
+
+1. **Проверьте типы свойств**:
+   - Убедитесь, что `Tag.Tag.Component` и `Tag.Tag.Default` могут принимать `ParameterValueType`.
+
+2. **Обновление источника**:
+   - Используйте `UpdateSourceTrigger="PropertyChanged"` для мгновенного обновления или `LostFocus` для обновления при потере фокуса.
+
+3. **Обработка ошибок**:
+   - Добавьте проверку типов в ConvertBack:
+     ```csharp
+     if (targetTypes[0] != typeof(ParameterValueType) || targetTypes[1] != typeof(ParameterValueType))
+         return new object[] { Binding.DoNothing, Binding.DoNothing };
+     ```
+
+4. **Если нужно разное поведение**:
+   - Если для Component и Default нужно разное преобразование, модифицируйте ConvertBack:
+     ```csharp
+     return new object[]
+     {
+         new ComponentValueType { Text = str.Split(';') }, // Для Component
+         new ParameterValueType { Text = str.Split(';') }  // Для Default
+     };
+     ```
+
+Эти изменения должны решить проблемы с двусторонней привязкой и многократным редактированием значений.
+
+
+
+
+
+
+.....
+
+
+
+
+Отлично! Давайте реализуем решение с паттерном **Адаптер**, которое позволит использовать `FnAlgorithm` там, где ожидается `ISCLE_Node`, без изменения исходных классов.  
+
+---
+
+### **1. Реализация адаптера для `FnAlgorithm`**
+Создадим класс `FnAlgorithmToNodeAdapter`, который будет реализовывать `ISCLE_Node`, делегируя вызовы к `FnAlgorithm`:
+
+```csharp
+public class FnAlgorithmToNodeAdapter : ISCLE_Node
+{
+    private readonly FnAlgorithm _algorithm;
+
+    public FnAlgorithmToNodeAdapter(FnAlgorithm algorithm)
+    {
+        _algorithm = algorithm ?? throw new ArgumentNullException(nameof(algorithm));
+    }
+
+    // Реализация ISCLE_Node через FnAlgorithm
+    public ISCLE_Node Parent
+    {
+        get => _algorithm.Parent != null ? new FnAlgorithmToNodeAdapter(_algorithm.Parent) : null;
+        set => _algorithm.Parent = (value as FnAlgorithmToNodeAdapter)?._algorithm;
+    }
+
+    public void Add(ISCLE_Node node)
+    {
+        if (node is FnAlgorithmToNodeAdapter adapter)
+        {
+            // Если добавляемый элемент - тоже FnAlgorithm, добавляем его в коллекцию
+            _algorithm.Add(adapter._algorithm);
+        }
+        else
+        {
+            throw new InvalidOperationException("Можно добавлять только FnAlgorithm через адаптер.");
+        }
+    }
+
+    // Другие методы ISCLE_Node, если они есть
+    // Например, Name, Children и т.д.
+    public string Name => _algorithm.Name;
+    public IEnumerable<ISCLE_Node> Children => _algorithm.Children?.Select(c => new FnAlgorithmToNodeAdapter(c));
+}
+```
+
+---
+
+### **2. Модификация метода `Drop`**
+Теперь обновим метод `Drop`, чтобы он поддерживал как `ISCLE_Node`, так и `FnAlgorithm` (через адаптер):
+
+```csharp
+private bool Drop(DragEventArgs e)
+{
+    if (!CanDrop(e))
+        return false;
+
+    // Раскрываем папку, если она закрыта
+    if (!_tlviVm.IsExpanded)
+        _tlviVm.IsExpanded = true;
+
+    var list = dragData as IList;
+    if (list == null || list.Count == 0)
+        return false;
+
+    e.Effects = DragDropEffects.Move;
+
+    var targetNode = _tlviVm.Tag as ISCLE_Node;
+    if (targetNode == null)
+        return false;
+
+    foreach (var item in list)
+    {
+        if (item is ISCLE_Node node)
+        {
+            // Обычная нода - обрабатываем как раньше
+            node.Parent = null;
+            targetNode.Add(node);
+        }
+        else if (item is FnAlgorithm algorithm)
+        {
+            // FnAlgorithm оборачиваем в адаптер
+            var adapter = new FnAlgorithmToNodeAdapter(algorithm);
+            adapter.Parent = null;
+            targetNode.Add(adapter);
+        }
+    }
+
+    // Дополнительные действия, если есть кастомные обработчики
+    if (HasDropAction(_tlviVm, e, out IDropAction action))
+    {
+        action.Drop(_tlviVm, e);
+    }
+
+    return true;
+}
+```
+
+---
+
+### **3. Дополнительные улучшения**
+#### **Адаптация обратно к `FnAlgorithm`**
+Если где-то в коде нужно получить оригинальный `FnAlgorithm` из адаптера, можно добавить свойство:
+```csharp
+public FnAlgorithm OriginalAlgorithm => _algorithm;
+```
+
+#### **Проверка типа перед добавлением**
+Если `targetNode` поддерживает только определенные типы, можно добавить проверку:
+```csharp
+if (targetNode is IAcceptsFnAlgorithm)
+{
+    var adapter = new FnAlgorithmToNodeAdapter(algorithm);
+    targetNode.Add(adapter);
+}
+else
+{
+    throw new InvalidOperationException("Целевой узел не поддерживает FnAlgorithm.");
+}
+```
+
+---
+
+### **Итог**
+✅ **Адаптер** позволяет использовать `FnAlgorithm` как `ISCLE_Node` без изменения исходного кода.  
+✅ **Гибкость** – если в будущем появятся другие типы, можно создать для них адаптеры.  
+✅ **Безопасность** – если `FnAlgorithm` не поддерживает какие-то методы `ISCLE_Node`, адаптер может либо игнорировать их, либо бросать исключения.  
+
+Если нужно добавить дополнительные методы `ISCLE_Node`, их можно реализовать в адаптере аналогично `Parent` и `Add`.  
+
+Если что-то нужно уточнить или доработать — дайте знать! 🚀
+
+
+
+........
+
+
+
+
+class ParameterValueConverter : IMultiValueConverter
     {
         public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
         {
