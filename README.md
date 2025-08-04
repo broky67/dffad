@@ -74,3 +74,125 @@
                     </MultiBinding>
                 </TextBox.Text>
             </TextBox>
+
+
+
+
+----
+
+
+protected override bool CanDrop(object dragData, DragEventArgs e)
+        {
+            // gets the tree node where mouse
+            _tlvi = UIHelper.GetItemContainerFromPointInTreeControl<TreeListViewItem>(AssociatedObject, e.GetPosition(AssociatedObject));
+            if (_tlvi == null)
+                return false;
+
+            _tlviVm = _tlvi.DataContext as SCLE_NodeViewModel;
+            if (_tlviVm == null)
+                return false;
+
+            var list = dragData as IList;
+
+            if (list != null && list.Count > 0 && list[0] is ISCLE_Node)
+            {
+                if (!e.AllowedEffects.HasFlag(DragDropEffects.Move))
+                    return false;
+
+                if (_tlviVm.Tag is ISCLE_Node node)
+                {
+                    if (node == null)
+                        return false;
+
+                    // check dragged items is not contains in target node
+                    if (node.GetNodes(false).Intersect(list.Cast<ISCLE_Node>()).Any())
+                        return false;
+
+                    // check all dragged items can be accepted by target node
+                    if (!list.Cast<ISCLE_Node>().All(x => node.CanAddNode(x)))
+                        return false;
+
+                    if (!(_tlviVm.CanUserAddNode && _tlviVm.CanUserRemoveNode))
+                        return false;
+
+                    if (list.Contains(node))
+                        return false;
+                }
+
+                if (_tlviVm is SCLE_FnAlgorithmViewModel algorithm)
+                {
+                    if (list[0] is SCLE_ProjectPou pou)
+                    {
+                        System.Console.WriteLine();
+                    }
+
+                    if (!(_tlviVm.CanUserAddNode && _tlviVm.CanUserRemoveNode))
+                        return false;
+
+                    /*if (pou != null)
+                    {
+                        var res = true;
+                        *//*var res = algorithm.PouLinks.Any(x => x.Name == pou.Name);*//*
+                        return !res;
+                    }
+                    return false;*/
+                }
+                return true;
+            }
+
+            return HasDropAction(_tlviVm, e, out IDropAction action);
+        }
+
+
+        protected override bool DoDropOperation(object dragData, DragEventArgs e)
+        {
+            int index = -1;
+
+            // gets index of this tree item
+            var parent = VisualHelper.GetVisualParent<ItemsControl>(_tlvi);
+            if (parent != null)
+                index = parent.ItemContainerGenerator.IndexFromContainer(_tlvi);
+
+            if (index < 0)
+                return false;
+
+            // expand folder for load its items
+            if (!_tlviVm.IsExpanded)
+                _tlviVm.IsExpanded = true;
+
+            var list = dragData as IList;
+            if (list != null && list.Count > 0 && list[0] is ISCLE_Node)
+            {
+                e.Effects = DragDropEffects.Move;
+
+                foreach (var node in list.OfType<ISCLE_Node>())
+                {
+                    // remove parent (or remove from source collection)
+                    node.Parent = null;
+
+                    // add node to project tree
+                    ((ISCLE_Node)_tlviVm.Tag).Add(node);
+                }
+            }
+
+            if (list != null && list.Count > 0 && list[0] is FnAlgorithm)
+            {
+                e.Effects = DragDropEffects.Move;
+
+                foreach (var node in list.OfType<FnAlgorithm>())
+                {
+                    // remove parent (or remove from source collection)
+                    node.Parent = null;
+
+                    // add node to project tree
+                    ((ISCLE_Node)_tlviVm.Tag).Add(node);
+                }
+            }
+
+            if (HasDropAction(_tlviVm, e, out IDropAction action))
+            {
+                action.Drop(_tlviVm, e);
+            }
+
+            return true;
+        }
