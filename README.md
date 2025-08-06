@@ -42,3 +42,5 @@ private static void SetComponents(DeviceDescription device, string typeName, Par
 
 
 Хотел сделать так parameterType.Component.AddRange(structDef.Component);, но будет ошибка collection = null
+
+device.Types.Items.FirstOrDefault(item => item._Name.Contains(typeName)) – не совсем удачная проверка. Возможно нужно проверить по шаблону регулярного выражения “(\w+:)?\w+”
