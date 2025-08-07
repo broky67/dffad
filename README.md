@@ -1,70 +1,237 @@
-# Создание проекта Module.FindTool
+Хорошо, создадим базовый интерфейс для FindTool, который будет интегрирован в проект аналогично IedExplorer. Вот пошаговая реализация:
 
-На основе предоставленного кода, я создам аналогичную структуру для проекта Module.FindTool с диалоговым окном поиска. Вот как это можно организовать:
+## 1. Создадим структуру проекта
 
-## 1. Модель (Model)
+```
+Module.FindTool/
+├── Dialogs/
+│   ├── FindToolView.xaml
+│   ├── FindToolView.xaml.cs
+│   └── FindToolViewModel.cs
+├── Contracts/
+│   └── IFindToolService.cs
+├── Services/
+│   └── FindToolService.cs
+└── Module.cs
+```
 
-Сначала создадим класс для параметров поиска (аналог `IedConnectionParam`):
+## 2. Интерфейс сервиса
 
 ```csharp
-// FindToolConnectionParam.cs
-using System;
-using System.ComponentModel;
-
-namespace Module.FindTool.Models
+// IFindToolService.cs
+namespace Module.FindTool.Contracts
 {
-    public class FindToolConnectionParam : INotifyPropertyChanged, ICloneable
+    public interface IFindToolService
     {
-        private string _searchTerm;
-        private bool _caseSensitive;
-        private bool _wholeWord;
-        private bool _useRegex;
-        private string _searchDirectory;
-        
-        public string SearchTerm
+        void ShowFindTool();
+    }
+}
+```
+
+## 3. Реализация сервиса
+
+```csharp
+// FindToolService.cs
+using System;
+using Module.FindTool.Dialogs;
+using Catel.Services;
+
+namespace Module.FindTool.Services
+{
+    public class FindToolService : IFindToolService
+    {
+        private readonly IUIVisualizerService _uiVisualizerService;
+
+        public FindToolService(IUIVisualizerService uiVisualizerService)
         {
-            get => _searchTerm;
-            set { _searchTerm = value; OnPropertyChanged(nameof(SearchTerm)); }
-        }
-        
-        public bool CaseSensitive
-        {
-            get => _caseSensitive;
-            set { _caseSensitive = value; OnPropertyChanged(nameof(CaseSensitive)); }
-        }
-        
-        public bool WholeWord
-        {
-            get => _wholeWord;
-            set { _wholeWord = value; OnPropertyChanged(nameof(WholeWord)); }
-        }
-        
-        public bool UseRegex
-        {
-            get => _useRegex;
-            set { _useRegex = value; OnPropertyChanged(nameof(UseRegex)); }
-        }
-        
-        public string SearchDirectory
-        {
-            get => _searchDirectory;
-            set { _searchDirectory = value; OnPropertyChanged(nameof(SearchDirectory)); }
+            _uiVisualizerService = uiVisualizerService;
         }
 
-        public event PropertyChangedEventHandler PropertyChanged;
-
-        protected virtual void OnPropertyChanged(string propertyName)
+        public void ShowFindTool()
         {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
-
-        public object Clone()
-        {
-            return MemberwiseClone();
+            var viewModel = new FindToolViewModel();
+            _uiVisualizerService.ShowDialog(viewModel);
         }
     }
 }
 ```
+
+## 4. ViewModel
+
+```csharp
+// FindToolViewModel.cs
+using Catel.MVVM;
+
+namespace Module.FindTool.Dialogs
+{
+    [View(typeof(FindToolView))]
+    public class FindToolViewModel : ViewModelBase
+    {
+        private string _searchText;
+        
+        public string SearchText
+        {
+            get => _searchText;
+            set => SetProperty(ref _searchText, value);
+        }
+
+        public FindToolViewModel()
+        {
+            Title = "Find Tool";
+        }
+    }
+}
+```
+
+## 5. View (XAML)
+
+```xml
+<!-- FindToolView.xaml -->
+<catel:DataWindow x:Class="Module.FindTool.Dialogs.FindToolView"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:catel="http://schemas.catelproject.com"
+                  Width="400" Height="200"
+                  SizeToContent="Manual"
+                  ResizeMode="CanResize"
+                  WindowStartupLocation="CenterOwner">
+    
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Search Box -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal">
+            <TextBlock Text="Search:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+            <TextBox Text="{Binding SearchText}" Width="200"/>
+        </StackPanel>
+        
+        <!-- Results Area -->
+        <Border Grid.Row="1" BorderBrush="LightGray" BorderThickness="1" Margin="0,10">
+            <TextBlock Text="Search results will appear here" 
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      Foreground="Gray"/>
+        </Border>
+        
+        <!-- Buttons -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Find" Width="80" Margin="0,0,5,0"/>
+            <Button Content="Close" Width="80" Command="{Binding CancelCommand}"/>
+        </StackPanel>
+    </Grid>
+</catel:DataWindow>
+```
+
+## 6. Интеграция с основным проектом
+
+```csharp
+// Module.cs
+using Catel.IoC;
+using Module.FindTool.Contracts;
+using Module.FindTool.Services;
+
+public class FindToolModule : ModuleBase
+{
+    public override void Initialize()
+    {
+        var serviceLocator = ServiceLocator.Default;
+        
+        // Регистрация сервисов
+        serviceLocator.RegisterType<IFindToolService, FindToolService>();
+        
+        // Регистрация в основном интерфейсе (аналогично IedExplorer)
+        var mainWindowService = serviceLocator.ResolveType<IMainWindowService>();
+        mainWindowService.AddToolMenuItem("Find Tool", () => 
+        {
+            var findToolService = serviceLocator.ResolveType<IFindToolService>();
+            findToolService.ShowFindTool();
+        });
+    }
+}
+```
+
+## 7. Добавление в главное меню
+
+Модифицируем главное окно, чтобы добавить пункт меню рядом с IedExplorer:
+
+```xml
+<!-- В главном окне, где есть меню Tools -->
+<MenuItem Header="Tools">
+    <MenuItem Header="IED Explorer" Command="{Binding ShowIedExplorerCommand}"/>
+    <MenuItem Header="Find Tool" Command="{Binding ShowFindToolCommand}"/>
+    <!-- другие инструменты -->
+</MenuItem>
+```
+
+## 8. ViewModel главного окна
+
+Добавим команду для открытия FindTool:
+
+```csharp
+// MainWindowViewModel.cs
+public Command ShowFindToolCommand { get; private set; }
+
+private void InitializeCommands()
+{
+    ShowFindToolCommand = new Command(OnShowFindToolCommand);
+    // другие команды
+}
+
+private void OnShowFindToolCommand()
+{
+    var findToolService = ServiceLocator.Default.ResolveType<IFindToolService>();
+    findToolService.ShowFindTool();
+}
+```
+
+## 9. Регистрация модуля
+
+В файле `App.xaml.cs` или основном bootstrapper'е:
+
+```csharp
+protected override void ConfigureModuleCatalog()
+{
+    base.ConfigureModuleCatalog();
+    
+    // Другие модули
+    ModuleCatalog.AddModule(typeof(FindToolModule));
+}
+```
+
+## Как это будет выглядеть:
+
+1. В главном окне в меню "Tools" появится новый пункт "Find Tool" рядом с "IED Explorer"
+2. При нажатии откроется простое окно поиска с:
+   - Поле для ввода текста
+   - Область для результатов (пока заглушка)
+   - Кнопки Find и Close
+
+Это базовая интеграция. Далее можно:
+1. Добавить реальную логику поиска по проекту
+2. Реализовать отображение результатов
+3. Добавить дополнительные параметры поиска
+4. Связать с менеджером проектов
+
+Хотите, чтобы я подробнее описал какой-то из этих шагов или добавил конкретную функциональность?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## 2. ViewModel
 
