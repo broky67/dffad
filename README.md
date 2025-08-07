@@ -1,3 +1,315 @@
+# Создание проекта Module.FindTool
+
+На основе предоставленного кода, я создам аналогичную структуру для проекта Module.FindTool с диалоговым окном поиска. Вот как это можно организовать:
+
+## 1. Модель (Model)
+
+Сначала создадим класс для параметров поиска (аналог `IedConnectionParam`):
+
+```csharp
+// FindToolConnectionParam.cs
+using System;
+using System.ComponentModel;
+
+namespace Module.FindTool.Models
+{
+    public class FindToolConnectionParam : INotifyPropertyChanged, ICloneable
+    {
+        private string _searchTerm;
+        private bool _caseSensitive;
+        private bool _wholeWord;
+        private bool _useRegex;
+        private string _searchDirectory;
+        
+        public string SearchTerm
+        {
+            get => _searchTerm;
+            set { _searchTerm = value; OnPropertyChanged(nameof(SearchTerm)); }
+        }
+        
+        public bool CaseSensitive
+        {
+            get => _caseSensitive;
+            set { _caseSensitive = value; OnPropertyChanged(nameof(CaseSensitive)); }
+        }
+        
+        public bool WholeWord
+        {
+            get => _wholeWord;
+            set { _wholeWord = value; OnPropertyChanged(nameof(WholeWord)); }
+        }
+        
+        public bool UseRegex
+        {
+            get => _useRegex;
+            set { _useRegex = value; OnPropertyChanged(nameof(UseRegex)); }
+        }
+        
+        public string SearchDirectory
+        {
+            get => _searchDirectory;
+            set { _searchDirectory = value; OnPropertyChanged(nameof(SearchDirectory)); }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void OnPropertyChanged(string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        public object Clone()
+        {
+            return MemberwiseClone();
+        }
+    }
+}
+```
+
+## 2. ViewModel
+
+```csharp
+// FindToolDialogViewModel.cs
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Linq;
+using Catel.MVVM;
+using Module.FindTool.Models;
+
+namespace Module.FindTool.Dialogs
+{
+    using RM = Properties.Resources;
+    using SM = Properties.Settings;
+
+    [View(typeof(FindToolDialogView))]
+    public class FindToolDialogViewModel : ViewModelBase
+    {
+        private string DefaultTitle = RM.FindToolDialog_Title;
+        private FindToolConnectionParam _selectedParam;
+        private FindToolConnectionParam _selectedParamCopy;
+        private bool _isAdvancedOptionsVisible;
+
+        public override string Title => DefaultTitle;
+
+        #region Properties
+
+        public FindToolConnectionParam SelectedParam
+        {
+            get => _selectedParam;
+            set
+            {
+                _selectedParam = value;
+                RaisePropertyChanged(nameof(SelectedParam));
+            }
+        }
+
+        public bool IsAdvancedOptionsVisible
+        {
+            get => _isAdvancedOptionsVisible;
+            set
+            {
+                _isAdvancedOptionsVisible = value;
+                RaisePropertyChanged(nameof(IsAdvancedOptionsVisible));
+            }
+        }
+
+        #endregion
+
+        #region Commands
+
+        public Command ToggleAdvancedOptionsCommand { get; private set; }
+        public Command SearchCommand { get; private set; }
+        public Command CancelCommand { get; private set; }
+
+        #endregion
+
+        public FindToolDialogViewModel(FindToolConnectionParam searchParam)
+        {
+            SelectedParam = searchParam;
+            _selectedParamCopy = (FindToolConnectionParam)searchParam.Clone();
+
+            InitializeCommands();
+        }
+
+        private void InitializeCommands()
+        {
+            ToggleAdvancedOptionsCommand = new Command(OnToggleAdvancedOptions);
+            SearchCommand = new Command(OnSearchExecute, OnSearchCanExecute);
+            CancelCommand = new Command(OnCancelExecute);
+        }
+
+        private void OnToggleAdvancedOptions()
+        {
+            IsAdvancedOptionsVisible = !IsAdvancedOptionsVisible;
+        }
+
+        private bool OnSearchCanExecute()
+        {
+            return !string.IsNullOrWhiteSpace(SelectedParam?.SearchTerm) && 
+                   !string.IsNullOrWhiteSpace(SelectedParam?.SearchDirectory);
+        }
+
+        private void OnSearchExecute()
+        {
+            // Здесь будет логика выполнения поиска
+            SaveSettings();
+            this.SaveAndCloseViewModelAsync();
+        }
+
+        private void OnCancelExecute()
+        {
+            // Восстанавливаем оригинальные значения
+            SelectedParam = _selectedParamCopy;
+            this.CancelAndCloseViewModelAsync();
+        }
+
+        private void SaveSettings()
+        {
+            // Сохранение настроек в Properties.Settings
+            SM.Default.FindTool_CaseSensitive = SelectedParam.CaseSensitive;
+            SM.Default.FindTool_WholeWord = SelectedParam.WholeWord;
+            SM.Default.FindTool_UseRegex = SelectedParam.UseRegex;
+            SM.Default.FindTool_LastDirectory = SelectedParam.SearchDirectory;
+            SM.Default.Save();
+        }
+    }
+}
+```
+
+## 3. View (XAML)
+
+```xml
+<!-- FindToolDialogView.xaml -->
+<catel:DataWindow x:Class="Module.FindTool.Dialogs.FindToolDialogView"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:catel="http://schemas.catelproject.com"
+                  xmlns:local="clr-namespace:Module.FindTool.Dialogs"
+                  SizeToContent="WidthAndHeight"
+                  ResizeMode="NoResize"
+                  WindowStartupLocation="CenterOwner"
+                  Title="{Binding Title}">
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto" x:Name="AdvancedOptionsRow"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Search Term -->
+        <Label Grid.Row="0" Grid.Column="0" Content="Search Term:"/>
+        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding SelectedParam.SearchTerm}" MinWidth="200"/>
+
+        <!-- Search Directory -->
+        <Label Grid.Row="1" Grid.Column="0" Content="Search In:"/>
+        <Grid Grid.Row="1" Grid.Column="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0" Text="{Binding SelectedParam.SearchDirectory}"/>
+            <Button Grid.Column="1" Content="Browse..." Margin="5,0,0,0"/>
+        </Grid>
+
+        <!-- Advanced Options Toggle -->
+        <Button Grid.Row="2" Grid.ColumnSpan="2" 
+                Content="{Binding IsAdvancedOptionsVisible, Converter={catel:BooleanToCollapsingVisibilityConverter}, ConverterParameter='Hide Advanced Options|Show Advanced Options'}}"
+                Command="{Binding ToggleAdvancedOptionsCommand}"
+                HorizontalAlignment="Right" Margin="0,5"/>
+
+        <!-- Advanced Options -->
+        <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Visibility="{Binding IsAdvancedOptionsVisible, Converter={catel:BooleanToCollapsingVisibilityConverter}}">
+            <CheckBox Content="Case sensitive" IsChecked="{Binding SelectedParam.CaseSensitive}" Margin="0,5"/>
+            <CheckBox Content="Whole word" IsChecked="{Binding SelectedParam.WholeWord}" Margin="0,5"/>
+            <CheckBox Content="Use regular expressions" IsChecked="{Binding SelectedParam.UseRegex}" Margin="0,5"/>
+        </StackPanel>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="Search" Command="{Binding SearchCommand}" Width="80" Margin="0,0,5,0"/>
+            <Button Content="Cancel" Command="{Binding CancelCommand}" Width="80"/>
+        </StackPanel>
+    </Grid>
+</catel:DataWindow>
+```
+
+## 4. Code-behind для View
+
+```csharp
+// FindToolDialogView.xaml.cs
+using Catel.Windows;
+
+namespace Module.FindTool.Dialogs
+{
+    public partial class FindToolDialogView : DataWindow
+    {
+        public FindToolDialogView()
+            : base(Catel.Windows.DataWindowMode.OkCancel)
+        {
+            InitializeComponent();
+        }
+    }
+}
+```
+
+## 5. Ресурсы (Properties/Resources.resx)
+
+Добавьте в ресурсы следующие строки:
+- FindToolDialog_Title - "Find Tool"
+- и другие необходимые строки для локализации
+
+## 6. Настройки (Properties/Settings.settings)
+
+Добавьте в настройки следующие свойства:
+- FindTool_CaseSensitive (bool)
+- FindTool_WholeWord (bool)
+- FindTool_UseRegex (bool)
+- FindTool_LastDirectory (string)
+
+## Структура проекта
+
+Окончательная структура проекта должна выглядеть примерно так:
+
+```
+Module.FindTool/
+├── Dialogs/
+│   ├── FindToolDialogView.xaml
+│   ├── FindToolDialogView.xaml.cs
+│   └── FindToolDialogViewModel.cs
+├── Models/
+│   └── FindToolConnectionParam.cs
+├── Properties/
+│   ├── Resources.resx
+│   └── Settings.settings
+└── Module.cs (если нужно)
+```
+
+Это базовая структура, аналогичная предоставленному примеру. Вы можете расширить ее, добавив:
+1. Валидацию в ViewModel
+2. Дополнительные параметры поиска
+3. Логику для кнопки "Browse..."
+4. Результаты поиска в отдельной области
+5. Прогресс-бар для длительных операций поиска
+
+Хотите, чтобы я добавил какие-то из этих функций или изменил существующую реализацию?
+
+
+
+
+
+
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
