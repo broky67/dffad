@@ -1,3 +1,88 @@
+Да, временно можно использовать существующий `Ribbon.xaml` файл (как вы делали изначально), но нужно внести несколько важных исправлений, чтобы это работало корректно. Вот как это сделать:
+
+### 1. Исправления в существующем `IedExplorerRibbon.xaml`:
+```xml
+<fluent:Button Header="FindTool"
+               Command="{Binding ShowFindToolDialogCommand}"
+               Icon="/Module.IedExplorer;component/Resources/Images/ied_scan.png"
+               LargeIcon="/Module.IedExplorer;component/Resources/Images/32/ied_scan.png">
+    <!-- Добавляем привязку контекста -->
+    <fluent:Button.DataContext>
+        <Binding RelativeSource="{RelativeSource AncestorType=fluent:Ribbon}" 
+                 Path="DataContext"/>
+    </fluent:Button.DataContext>
+</fluent:Button>
+```
+
+### 2. Обязательные исправления в `FindToolModule.cs`:
+```csharp
+// Добавляем свойство для команды, чтобы Ribbon мог найти ее
+[Export]
+public ICommand ShowFindToolDialogCommand => 
+    _showFindToolCommand ?? (_showFindToolCommand = new Command(ShowFindToolDialog, ShowFindToolDialogCanExecute));
+
+// Меняем модификатор доступа с private на public
+public ICommand ShowFindToolDialogCommand { get; private set; }
+```
+
+### 3. Альтернативное решение (если не работает привязка):
+Добавьте в `OnInitialized()` явную регистрацию команды:
+```csharp
+protected override void OnInitialized()
+{
+    base.OnInitialized();
+    
+    // Явно регистрируем команду для Ribbon
+    _ribbonService.RegisterRibbonCommand(this, "ShowFindToolDialogCommand", ShowFindToolDialogCommand);
+    
+    InitializeRibbon(_ribbonService);
+}
+```
+
+### Почему это будет работать:
+1. **Привязка контекста** в XAML гарантирует, что команда будет найдена
+2. **Экспорт команды** делает ее доступной для разрешения зависимостей
+3. **Публичное свойство** позволяет Ribbon получить доступ к команде
+
+### Какие проблемы могут остаться:
+1. Иконки будут от IedExplorer (можно оставить временно)
+2. Группа кнопок будет называться "Online" (как у IedExplorer)
+3. Возможны конфликты, если несколько модулей используют один ResourceDictionary
+
+### Полная временная интеграция:
+```csharp
+// В FindToolModule.cs
+[Export(typeof(ICommand))]
+[ExportMetadata("CommandName", "ShowFindToolDialogCommand")]
+public ICommand ShowFindToolDialogCommand { get; private set; }
+
+// В IedExplorerRibbon.xaml
+<fluent:Button Header="Find Tool"
+               Command="{Binding ShowFindToolDialogCommand}"
+               Icon="{StaticResource FindIcon}"
+               ToolTip="Search in project">
+    <fluent:Button.DataContext>
+        <Binding Source="{StaticResource Locator}" Path="FindToolModule"/>
+    </fluent:Button.DataContext>
+</fluent:Button>
+```
+
+**Важно**: Это временное решение. Для production-версии лучше:
+1. Создать отдельный `FindToolRibbon.xaml`
+2. Добавить уникальные иконки
+3. Вынести кнопку в отдельную группу
+
+Хотите, чтобы я показал, как постепенно перенести это на отдельный Ribbon, когда он понадобится?
+
+
+
+
+
+
+
+
+
+
 Проблема в том, что вы создаете ViewModel, но не показываете диалоговое окно. Давайте исправим ваш код:
 
 ## 1. Исправленный FindToolModule.cs
