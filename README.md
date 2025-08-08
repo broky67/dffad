@@ -1,3 +1,139 @@
+Чтобы кнопка FindTool появилась на существующей панели, нужно проверить несколько ключевых моментов:
+
+---
+
+### 1. **Правильная привязка команды в Ribbon (главная причина)**
+В вашем текущем `IedExplorerRibbon.xaml` замените кнопку на:
+
+```xml
+<fluent:Button Header="Find Tool"
+               Command="{Binding Path=ShowFindToolDialogCommand, 
+                        Source={x:Static Member=local:Commands.Locator}}"
+               Icon="/Module.IedExplorer;component/Resources/Images/ied_scan.png"
+               LargeIcon="/Module.IedExplorer;component/Resources/Images/32/ied_scan.png"
+               ToolTip="Поиск в проекте">
+</fluent:Button>
+```
+
+**Что проверить:**
+- Убедитесь, что `local` ссылается на namespace вашего модуля:  
+  ```xml
+  xmlns:local="clr-namespace:Module.FindTool;assembly=Module.FindTool"
+  ```
+- Проверьте, что команда экспортируется (см. пункт 2)
+
+---
+
+### 2. **Экспорт команды в FindToolModule**
+Добавьте атрибуты к свойству команды:
+
+```csharp
+[Export(typeof(ICommand))]
+[ExportMetadata("CommandName", "ShowFindToolDialogCommand")]
+public ICommand ShowFindToolDialogCommand { get; private set; }
+```
+
+**Проверьте:**
+- Класс `FindToolModule` должен быть экспортируемым (`[Export]` в основном есть)
+- Модуль должен быть зарегистрирован в `App.xaml.cs` или Bootstrapper
+
+---
+
+### 3. **Инициализация модуля**
+В `FindToolModule.cs` добавьте логирование для отладки:
+
+```csharp
+protected override void OnInitialized()
+{
+    base.OnInitialized();
+    Debug.WriteLine("FindToolModule initialized"); // Логируем инициализацию
+    
+    try {
+        InitializeRibbon(_ribbonService);
+        Debug.WriteLine("Ribbon initialization completed");
+    }
+    catch (Exception ex) {
+        Debug.WriteLine($"Ribbon init error: {ex.Message}");
+    }
+}
+```
+
+**Что смотреть:**
+- Появится ли сообщение в Output (View → Output в VS)
+- Если нет — модуль не загружается
+
+---
+
+### 4. **Проверка DataContext**
+Временная мера — добавьте в конструктор модуля:
+
+```csharp
+public FindToolModule()
+{
+    CatelEnvironment.RegisterDefaultViewModelServices();
+    Debug.WriteLine("FindToolModule constructor called");
+}
+```
+
+---
+
+### 5. **Альтернативный способ регистрации кнопки**
+Если не работает через XAML, добавьте кнопку программно:
+
+```csharp
+protected void InitializeRibbon(IRibbonService ribbonService)
+{
+    var button = new Fluent.Button()
+    {
+        Header = "Find Tool",
+        Command = this.ShowFindToolDialogCommand,
+        Icon = new BitmapImage(new Uri("pack://application:,,,/Module.IedExplorer;component/Resources/Images/ied_scan.png"))
+    };
+    
+    ribbonService.AddRibbonItem(button, this);
+}
+```
+
+---
+
+### Точки отказа и их проверка:
+1. **Модуль не загружается**:
+   - Проверьте регистрацию в `App.xaml.cs`:  
+     ```csharp
+     ModuleCatalog.AddModule(typeof(FindToolModule));
+     ```
+
+2. **Команда не экспортирована**:
+   - Убедитесь, что атрибут `[Export]` есть у команды и модуля
+
+3. **Ошибки в ResourceDictionary**:
+   - Проверьте Output на исключения при загрузке XAML
+
+4. **Неправильный DataContext**:
+   - Временно задайте контекст вручную:  
+     ```xml
+     <fluent:Button.DataContext>
+         <Binding Source="{x:Static local:FindToolModule.Instance}"/>
+     </fluent:Button.DataContext>
+     ```
+
+---
+
+### Экстренная проверка:
+Добавьте временную кнопку в код главного окна для теста:
+
+```csharp
+var testBtn = new Button() { 
+    Content = "TEST FindTool", 
+    Command = new Command(() => new FindToolViewModel()) 
+};
+MainGrid.Children.Add(testBtn);
+```
+
+Если при нажатии открывается окно — проблема только в интеграции с Ribbon. Если нет — ошибка в View/ViewModel.
+
+
+
 Да, временно можно использовать существующий `Ribbon.xaml` файл (как вы делали изначально), но нужно внести несколько важных исправлений, чтобы это работало корректно. Вот как это сделать:
 
 ### 1. Исправления в существующем `IedExplorerRibbon.xaml`:
