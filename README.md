@@ -1,3 +1,78 @@
+Ошибка возникает из-за того, что свойство `SearchText` в вашей `FindToolViewModel` объявлено только с геттером (get), но в XAML вы пытаетесь сделать двустороннюю привязку (`TwoWay`) через `TextBox`.
+
+### Исправление для ViewModel:
+
+```csharp
+public class FindToolViewModel : ViewModelBase
+{
+    private string _searchText;
+
+    // Исправленное свойство с get и set
+    public string SearchText
+    {
+        get { return _searchText; }
+        set 
+        {
+            if (_searchText != value)
+            {
+                _searchText = value;
+                RaisePropertyChanged(nameof(SearchText));
+                
+                // Дополнительно: можно добавить логику при изменении текста
+                // Например, автоматический поиск
+            }
+        }
+    }
+
+    public FindToolViewModel()
+    {
+        Title = "Find Tool";
+    }
+}
+```
+
+### Альтернативные решения:
+
+1. **Если нужно сделать свойство read-only** (менее предпочтительно для TextBox):
+```csharp
+// Только для чтения (не рекомендуется для TextBox)
+public string SearchText { get; private set; }
+
+// Тогда в XAML нужно явно указать OneWay binding:
+<TextBox Text="{Binding SearchText, Mode=OneWay}" Width="200"/>
+```
+
+2. **Если используете Catel MVVM** (лучшее решение):
+```csharp
+public string SearchText
+{
+    get { return GetValue<string>(SearchTextProperty); }
+    set { SetValue(SearchTextProperty, value); }
+}
+
+public static readonly PropertyData SearchTextProperty = 
+    RegisterProperty(nameof(SearchText), typeof(string), null);
+```
+
+### Почему это важно:
+- `TextBox` по умолчанию использует `TwoWay` binding
+- При изменении текста в UI он пытается обновить свойство в VM
+- Без сеттера это невозможно, отсюда и исключение
+
+### Дополнительные проверки:
+1. Убедитесь, что `DataContext` окна установлен на `FindToolViewModel`
+2. Проверьте, что пространство имен в XAML правильно указано:
+```xml
+xmlns:local="clr-namespace:Module.IedExplorer.Dialogs"
+```
+3. Если используете Catel, убедитесь что атрибут `[View]` указан:
+```csharp
+[View(typeof(FindToolView))]
+public class FindToolViewModel : ViewModelBase
+```
+
+После этих изменений привязка должна работать корректно, и окно поиска будет реагировать на ввод текста.
+
 System.InvalidOperationException: 'Привязка типа TwoWay или OneWayToSource не может работать с доступным только для чтения свойством "SearchText" типа "Module.IedExplorer.FindToolViewModel".'
 
 
