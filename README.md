@@ -1,3 +1,150 @@
+            else if (node is ParameterSectionType sectionType)
+            {
+                var sectionTypeName = (sectionType.Name == null) ? sectionType._Name : sectionType.Name.ToString();
+                yield return new EditablePropertyItemModel(sectionType)
+                {
+                    IndentLevel = indentLevel,
+                    //IsEditableValue = isEditableValue,
+                    //IsEditableName = isEditableName,
+                    //Name = sectionTypeName,
+                    GetName = tag => { return (sectionType.Name == null) ? sectionType._Name : sectionType.Name.ToString(); },
+                    SetName = (tag, value) => { sectionType.Name = (StringRefType)value; },
+                };
+
+                foreach (var item in sectionType.Items)
+                {
+                    foreach (var pm in GenerateItems(item, indentLevel + 1))
+                        yield return pm;
+                }
+            }
+    public class PropertyItemModel : Mvvm.ObservableObject
+    {
+        private int _indentLevel;
+        private bool _isEditableValue;
+        private bool _isEditableName;
+
+        public PropertyItemModel(object tag)
+        {
+            Tag = tag;
+        }
+
+        public int IndentLevel
+        {
+            get { return _indentLevel; }
+            set
+            {
+                if (value != _indentLevel)
+                {
+                    _indentLevel = value;
+                    RaisePropertyChanged();
+                }
+            }
+        }
+
+        public virtual string Name { get; set; }
+
+        public object Tag { get; set; }
+
+        public bool IsEditableValue
+        {
+            get { return _isEditableValue; }
+            set
+            {
+                _isEditableValue = value;
+                RaisePropertyChanged();
+            }
+        }
+
+        public bool IsEditableName
+        {
+            get { return _isEditableName; }
+            set
+            {
+                _isEditableName = value;
+                RaisePropertyChanged();
+            }
+        }
+    }
+
+    public class EditablePropertyItemModel : PropertyItemModel
+    {
+        public EditablePropertyItemModel(object tag)
+            : base(tag)
+        {
+        }
+
+        public override string Name
+        {
+            get { return GetName != null ? GetName(Tag) : base.Name; }
+            set
+            {
+                if (SetName != null)
+                    SetName(Tag, value);
+                base.Name = value;
+            }
+        }
+
+        public Func<object, string> GetName;
+        public Action<object, string> SetName;
+    }
+
+
+
+private void InsertDataTreeGridItem(ObservableCollection<DataTreeGridItem> items, int index, object customDataTreeGridItem)
+        {
+            var dataTreeGridItem = new DataTreeGridItem()
+            {
+                //Content = GetValue<object>(customDataTreeGridItem, ContentMember, null),
+                Indentation = GetValue(customDataTreeGridItem, IndentationMember, 0),
+                IsExpanded = GetValue(customDataTreeGridItem, IsExpandedMember, true),
+                Tag = customDataTreeGridItem
+            };
+
+            ApplyBindings(dataTreeGridItem, customDataTreeGridItem);
+
+            items.Insert(index, dataTreeGridItem);
+
+            if (UpdateSourceOnTargetChanges)
+            {
+                dataTreeGridItem.PropertyChanged += Item_PropertyChanged;
+            }
+        }
+
+        private DataTreeGridItem ApplyBindings(DataTreeGridItem dataTreeGridItem, object customDataTreeGridItem)
+        {
+            if (ContentConverter != null)
+            {
+                var binding = new Binding(ContentMember) { Source = customDataTreeGridItem, Mode = BindingMode.TwoWay, Converter = ContentConverter };
+                dataTreeGridItem.SetBinding(DataTreeGridItem.ContentProperty, binding);
+            }
+            else
+            {
+                var binding = new Binding(ContentMember) { Source = customDataTreeGridItem, Mode = BindingMode.TwoWay };
+                dataTreeGridItem.SetBinding(DataTreeGridItem.ContentProperty, binding);
+            }
+
+            if (IsCheckedMember != null)
+            {
+                var binding = new Binding(IsCheckedMember) { Source = customDataTreeGridItem, Mode = BindingMode.TwoWay, Converter = IsCheckedConverter };
+                dataTreeGridItem.SetBinding(DataTreeGridItem.IsCheckedProperty, binding);
+                dataTreeGridItem.CheckBoxVisibility = Visibility.Visible;
+            }
+
+            if (IsCheckBoxEnabledMember != null)
+            {
+                var binding = new Binding(IsCheckBoxEnabledMember) { Source = customDataTreeGridItem };
+                dataTreeGridItem.SetBinding(DataTreeGridItem.IsCheckBoxEnabledProperty, binding);
+            }
+
+            if (IconSourceMember != null)
+            {
+                var binding = new Binding(IconSourceMember) { Source = customDataTreeGridItem, Converter = IconSourceConverter };
+                dataTreeGridItem.SetBinding(DataTreeGridItem.IconSourceProperty, binding);
+                dataTreeGridItem.IconVisibility = Visibility.Visible;
+            }
+
+            return dataTreeGridItem;
+        }
 public class TypeDefComponent
 {
     public string Name { get; set; }
