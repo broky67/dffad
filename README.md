@@ -1,4 +1,22 @@
-Для реализации клонирования `TypeDefComponentCollection` с поддержкой глубокого копирования всех элементов, включая вложенные объекты, вот полное решение:
+public partial class TypedefTypeComponentCollection : _DeviceDescriptionNodeCollection<TypedefTypeComponent>, ICloneable
+{
+    // ... существующие конструкторы ...
+
+    public object Clone()
+    {
+        var clone = new TypedefTypeComponentCollection(this.Parent);
+        
+        // Используем AddRange для эффективного добавления элементов
+        clone.AddRange(
+            this.Items
+                .Where(item => item != null)
+                .Select(item => (TypedefTypeComponent)item.Clone())
+        );
+        
+        return clone;
+    }
+}
+`TypeDefComponentCollection` с поддержкой глубокого копирования всех элементов, включая вложенные объекты, вот полное решение:
 
 ### 1. Сначала реализуем `ICloneable` для `TypedefTypeComponent`
 
