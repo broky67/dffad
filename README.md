@@ -1,3 +1,271 @@
+ public partial class TypedefTypeComponent : _DeviceDescriptionNode
+    {
+
+        //TODO
+        private ParameterTypeAttributes attributesField;
+
+        private ParameterValueType defaultField;
+
+        private StringRefType visibleNameField;
+
+        private StringRefType unitField;
+
+        private StringRefType descriptionField;
+
+        //private string filterFlagsField;
+
+        //private TypedefTypeComponentStateFlags stateField;
+
+        [System.NonSerialized] private System.Xml.XmlElement[] anyField;
+
+        private string identifierField;
+
+        private string typeField;
+
+        //private TypedefTypeComponentOnlineaccess onlineaccessField;
+
+        //private TypedefTypeComponentOfflineaccess offlineaccessField;
+        public TypedefTypeComponent()
+        {
+            //this.stateField = TypedefTypeComponentStateFlags.none;
+            //this.onlineaccessField = TypedefTypeComponentOnlineaccess.readwrite;
+            //this.offlineaccessField = TypedefTypeComponentOfflineaccess.readwrite;
+            defaultField = new ParameterValueType() { Text = new[] { "0" } };
+        }
+
+
+
+        /// <remarks/>
+        public ParameterTypeAttributes Attributes
+        {
+            get
+            {
+                return this.attributesField;
+            }
+            set
+            {
+                this.attributesField = value;
+                this.RaisePropertyChanged("Attributes");
+            }
+        }
+
+        /// <remarks/>
+        public ParameterValueType Default
+        {
+            get
+            {
+                return this.defaultField;
+            }
+            set
+            {
+                this.defaultField = value;
+                this.RaisePropertyChanged("Default");
+            }
+        }
+
+        /// <remarks/>
+        public StringRefType VisibleName
+        {
+            get
+            {
+                return this.visibleNameField;
+            }
+            set
+            {
+                this.visibleNameField = value;
+                this.RaisePropertyChanged("VisibleName");
+            }
+        }
+
+        /// <remarks/>
+        public StringRefType Unit
+        {
+            get
+            {
+                return this.unitField;
+            }
+            set
+            {
+                this.unitField = value;
+                this.RaisePropertyChanged("Unit");
+            }
+        }
+
+        /// <remarks/>
+        public StringRefType Description
+        {
+            get
+            {
+                return this.descriptionField;
+            }
+            set
+            {
+                this.descriptionField = value;
+                this.RaisePropertyChanged("Description");
+            }
+        }
+
+        ///// <remarks/>
+        //[XmlElement(DataType = "NMTOKENS")]
+        //public string FilterFlags
+        //{
+        //    get
+        //    {
+        //        return this.filterFlagsField;
+        //    }
+        //    set
+        //    {
+        //        this.filterFlagsField = value;
+        //        this.RaisePropertyChanged("FilterFlags");
+        //    }
+        //}
+
+        /// <remarks/>
+        [XmlAnyElement]
+        public System.Xml.XmlElement[] Any
+        {
+            get
+            {
+                return this.anyField;
+            }
+            set
+            {
+                this.anyField = value;
+                this.RaisePropertyChanged("Any");
+            }
+        }
+
+        /// <remarks/>
+        [XmlAttribute(DataType = "NCName")]
+        public string identifier
+        {
+            get
+            {
+                return this.identifierField;
+            }
+            set
+            {
+                this.identifierField = value;
+                this.RaisePropertyChanged("identifier");
+            }
+        }
+
+        /// <remarks/>
+        [XmlAttribute()]
+        public string type
+        {
+            get
+            {
+                return this.typeField;
+            }
+            set
+            {
+                this.typeField = value;
+                this.RaisePropertyChanged("type");
+            }
+        }
+
+/*        public TypedefTypeComponent(ParameterTypeAttributes attributes,
+    ParameterValueType defaultField,
+    StringRefType visibleName,
+    StringRefType unit,
+    StringRefType description,
+    System.Xml.XmlElement[] any,
+    string identifierField,
+    string typeField)
+        {
+            Attributes = attributes;
+            Default = defaultField;
+            VisibleName = visibleName;
+            Unit = unit;
+            Description = description;
+            Any = any;
+            identifier = identifierField;
+            type = typeField;
+        }
+        public object Clone()
+        {
+            return new TypedefTypeComponent(Attributes, Default, VisibleName, Unit, Description, Any, identifier, type);
+        }*/
+
+        ///// <remarks/>
+        //[XmlAttribute()]
+        //[DefaultValue(TypedefTypeComponentStateFlags.none)]
+        //public TypedefTypeComponentStateFlags state
+        //{
+        //    get
+        //    {
+        //        return this.stateField;
+        //    }
+        //    set
+        //    {
+        //        this.stateField = value;
+        //        this.RaisePropertyChanged("state");
+        //    }
+        //}
+
+        ///// <remarks/>
+        //[XmlAttribute()]
+        //[DefaultValue(TypedefTypeComponentOnlineaccess.readwrite)]
+        //public TypedefTypeComponentOnlineaccess onlineaccess
+        //{
+        //    get
+        //    {
+        //        return this.onlineaccessField;
+        //    }
+        //    set
+        //    {
+        //        this.onlineaccessField = value;
+        //        this.RaisePropertyChanged("onlineaccess");
+        //    }
+        //}
+
+        ///// <remarks/>
+        //[XmlAttribute()]
+        //[DefaultValue(TypedefTypeComponentOfflineaccess.readwrite)]
+        //public TypedefTypeComponentOfflineaccess offlineaccess
+        //{
+        //    get
+        //    {
+        //        return this.offlineaccessField;
+        //    }
+        //    set
+        //    {
+        //        this.offlineaccessField = value;
+        //        this.RaisePropertyChanged("offlineaccess");
+        //    }
+        //}
+    }
+
+    public partial class TypedefTypeComponentCollection : _DeviceDescriptionNodeCollection<TypedefTypeComponent>
+    {
+        protected TypedefTypeComponentCollection()
+        {
+        }
+
+        public TypedefTypeComponentCollection(_IDeviceDescriptionNode parent)
+            : base(parent)
+        {
+        }
+
+        public TypedefTypeComponentCollection(_IDeviceDescriptionNode parent, IEnumerable<TypedefTypeComponent> items)
+            : base(parent)
+        {
+            Items.AddRange(items);
+        }
+
+        public object Clone()
+        {
+            return new TypedefTypeComponentCollection();
+        }
+    }
+
+
+
+
+
+
+
             else if (node is ParameterSectionType sectionType)
             {
                 var sectionTypeName = (sectionType.Name == null) ? sectionType._Name : sectionType.Name.ToString();
