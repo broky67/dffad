@@ -1,3 +1,34 @@
+private void FilterParameterSections(DeviceDescription description)
+        {
+            foreach (var device in description.Device)
+            {
+                foreach (var con in device.Connector)
+                {
+                    if (con.HostParameterSet != null)
+                    {
+                        var filteredItems = new List<_DeviceDescriptionNode>();
+
+                        foreach (var node in con.HostParameterSet)
+                        {
+                            if (node is ParameterSectionType section)
+                            {
+                                if (section.Items != null)
+                                {
+                                    filteredItems.AddRange(section.Items);
+                                }
+                            }
+                            else
+                            {
+                                filteredItems.Add(node);
+                            }
+                        }
+                        con.HostParameterSet = new DeviceDescriptionNodeCollection(null, filteredItems);
+                    }
+                }
+            }
+        }
+
+
 Чтобы исключить отображение `ParameterSectionType` в `LibraryViewModel`, сохранив при этом его в модели данных, внесем следующие изменения:
 
 ### 1. Модифицируем метод `LoadLibraries` для фильтрации
