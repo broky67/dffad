@@ -28,6 +28,35 @@ private void FilterParameterSections(DeviceDescription description)
             }
         }
 
+public static class ParentHelper
+    {
+        /// <summary>
+        /// Gets the parent of the specified type.
+        /// </summary>
+        /// <typeparam name="TParent">The type of the parent.</typeparam>
+        /// <param name="child">The child model.</param>
+        /// <param name="maxLevels">The maximum levels to search. If <c>-1</c>, the number is unlimited.</param>
+        /// <returns>The parent or <c>null</c> if the parent is not found.</returns>
+        /// <exception cref="ArgumentNullException">The <paramref name="child" /> is <c>null</c>.</exception>
+        public static TParent GetParent<TParent>(this _IDeviceDescriptionNode child, int maxLevels = -1)
+            where TParent : class
+        {
+            Argument.IsNotNull("child", child);
+
+            var parent = child._Parent;
+            while (parent != null && maxLevels-- != 0)
+            {
+                if (parent is TParent)
+                {
+                    //Parent of type TParent is found
+                    return (TParent)parent;
+                }
+
+                parent = parent._Parent;
+            }
+            return null;
+        }
+    }
 
 Чтобы исключить отображение `ParameterSectionType` в `LibraryViewModel`, сохранив при этом его в модели данных, внесем следующие изменения:
 
