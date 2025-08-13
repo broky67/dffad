@@ -1,203 +1,196 @@
-            else if (node is ParameterSectionType sectionType)
-            {
-                var sectionTypeName = (sectionType.Name == null) ? sectionType._Name : sectionType.Name.ToString();
-                yield return new EditablePropertyItemModel(sectionType)
-                {
-                    IndentLevel = indentLevel,
-                    //IsEditableValue = isEditableValue,
-                    //IsEditableName = isEditableName,
-                    //Name = sectionTypeName,
-                    GetName = tag => { return (sectionType.Name == null) ? sectionType._Name : sectionType.Name.ToString(); },
-                    SetName = (tag, value) => { sectionType.Name = (StringRefType)value; },
-                };
+using Pilot.HwTool.Core;
+using Pilot.HwTool.Mvvm;
+using Pilot.HwTool.Mvvm.Helpers;
+using Pilot.TargetPlatform;
+using System;
+using System.Collections.ObjectModel;
+using System.ComponentModel.Composition;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Input;
 
-                foreach (var item in sectionType.Items)
-                {
-                    foreach (var pm in GenerateItems(item, indentLevel + 1))
-                        yield return pm;
-                }
-            }
-
-    public class PropertyItemModel : Mvvm.ObservableObject
+namespace Pilot.HwTool
+{
+    [Export]
+    [PartCreationPolicy(CreationPolicy.NonShared)]
+    public class LibraryViewModel : Mvvm.ViewModelBase
     {
-        private int _indentLevel;
-        private bool _isEditableValue;
-        private bool _isEditableName;
+        private _DeviceDescriptionNode selectedNode;
 
-        public PropertyItemModel(object tag)
+        [ImportingConstructor]
+        public LibraryViewModel()
         {
-            Tag = tag;
+            HwRoot = new ObservableCollection<_DeviceDescriptionNode>();
+
+            Import_StateBitsCommand = new RelayCommand(Import_StateBitsExecute);
+            Import_LibSensorOutCommand = new RelayCommand(Import_LibSensorOutExecute);
+            Module_AnalogInputCommand = new RelayCommand(Module_AnalogInputExecute);
+            Export_CCodeCommand = new RelayCommand(Export_CCodeExecute, Export_CCodeCanExecute);
         }
 
-        public int IndentLevel
+        public ObservableCollection<_DeviceDescriptionNode> HwRoot { get; set; }
+
+        public _DeviceDescriptionNode SelectedNode
         {
-            get { return _indentLevel; }
+            get => selectedNode;
             set
             {
-                if (value != _indentLevel)
-                {
-                    _indentLevel = value;
-                    RaisePropertyChanged();
-                }
-            }
-        }
-
-        public virtual string Name { get; set; }
-
-        public object Tag { get; set; }
-
-        public bool IsEditableValue
-        {
-            get { return _isEditableValue; }
-            set
-            {
-                _isEditableValue = value;
+                selectedNode = value;
                 RaisePropertyChanged();
             }
         }
 
-        public bool IsEditableName
+        #region Import/Export
+
+        public ICommand Import_StateBitsCommand { get; set; }
+        public ICommand Import_LibSensorOutCommand { get; set; }
+        public ICommand Module_AnalogInputCommand { get; set; }
+        public ICommand Export_CCodeCommand { get; set; }
+
+        private void Import_StateBitsExecute()
         {
-            get { return _isEditableName; }
-            set
+            var text = Clipboard.GetText();
+            if (!string.IsNullOrEmpty(text))
             {
-                _isEditableName = value;
-                RaisePropertyChanged();
+                try
+                {
+                    var types = LzgConv.Import_xxxStateBits(text);
+                    DeviceDescription dd = new DeviceDescription()
+                    {
+                        Types = new DeviceDescriptionTypes()
+                        {
+                            Items = new DeviceDescriptionNodeCollection(null, types),
+                            //ItemsElementName = new ItemsChoiceType[] { },
+                            //ItemsElementName = new[] { ItemsChoiceType.ArrayType, ItemsChoiceType.BitfieldType, ItemsChoiceType.EnumType, ItemsChoiceType.RangeType, ItemsChoiceType.StructType, ItemsChoiceType.UnionType },
+                        }
+                    };
+                    var xmlstr = XmlHelper.Serialize2Str(dd);
+                    Clipboard.SetText(xmlstr);
+                    System.Media.SystemSounds.Asterisk.Play();
+                }
+                catch (Exception ex)
+                {
+                    Clipboard.Clear();
+                    System.Media.SystemSounds.Exclamation.Play();
+                }
+            }
+        }
+
+        private void Import_LibSensorOutExecute()
+        {
+            var text = Clipboard.GetText();
+            if (!string.IsNullOrEmpty(text))
+            {
+                try
+                {
+                    var typeList = LzgConv.Import_LibSensorOut_as_Range(text);
+                    /*var paramSectList = LzgConv.Import_LibSensorOut_as_Param(text);*/
+                    DeviceDescription dd = new DeviceDescription()
+                    {
+                        Types = new DeviceDescriptionTypes()
+                        {
+                            Items = new DeviceDescriptionNodeCollection(null, typeList),
+                        },
+                   /*     ParameterSet = new DeviceDescriptionParameterSet
+                        {
+                            Items = new DeviceDescriptionNodeCollection(null, paramSectList),
+                        }*/
+                    };
+                    var xmlstr = XmlHelper.Serialize2Str(dd);
+                    Clipboard.SetText(xmlstr);
+                    System.Media.SystemSounds.Asterisk.Play();
+                }
+                catch (Exception ex)
+                {
+                    Clipboard.Clear();
+                    System.Media.SystemSounds.Exclamation.Play();
+                }
+            }
+        }
+
+        private void Module_AnalogInputExecute()
+        {
+            var text = Clipboard.GetText();
+            if (!string.IsNullOrEmpty(text))
+            {
+                try
+                {
+                    var ddd = LzgConv.Import_Module_AnalogInput(text);
+                    DeviceDescription dd = new DeviceDescription()
+                    {
+                        Device = new DeviceDescriptionDeviceCollection(null, ddd),
+                    };
+                    var xmlstr = XmlHelper.Serialize2Str(dd);
+                    Clipboard.SetText(xmlstr);
+                    System.Media.SystemSounds.Asterisk.Play();
+                }
+                catch (Exception ex)
+                {
+                    Clipboard.Clear();
+                    System.Media.SystemSounds.Exclamation.Play();
+                }
+            }
+        }
+
+        private bool Export_CCodeCanExecute()
+        {
+            return SelectedNode is DeviceDescription;// || SelectedNode is DeviceDescriptionDevice;
+        }
+
+        private void Export_CCodeExecute()
+        {
+            if (SelectedNode is DeviceDescription devdesc)
+            {
+                try
+                {
+                    var cstr = new CTarget(devdesc).Export_CCode();
+                    Clipboard.SetText(cstr);
+                    System.Media.SystemSounds.Asterisk.Play();
+                }
+                catch (Exception ex)
+                {
+                    Clipboard.Clear();
+                    System.Media.SystemSounds.Exclamation.Play();
+                }
+            }
+        }
+
+        #endregion
+
+        public override async void Initialize()
+        {
+            await LoadLibraries();
+        }
+
+        private async Task LoadLibraries()
+        {
+            DeviceDescription platformDescription = null;
+            try
+            {
+                var files = Directory.GetFiles("libraries", "*.xml");
+                foreach (var item in files)
+                {
+                    platformDescription = await Pilot.XmlHelper.DeserializeAsync<DeviceDescription>(item);
+                    //platformDescription.ProjPath = Path.GetFullPath(item);
+                    platformDescription._Name = Path.GetFileName(item);
+
+                    
+                    ComponentService.ApplyComponents(platformDescription);
+
+                    Thread.Sleep(1);
+
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        HwRoot.Add(platformDescription);
+                    });
+                }
+            }
+            catch (Exception e)
+            {
+
             }
         }
     }
-
-    public class EditablePropertyItemModel : PropertyItemModel
-    {
-        public EditablePropertyItemModel(object tag)
-            : base(tag)
-        {
-        }
-
-        public override string Name
-        {
-            get { return GetName != null ? GetName(Tag) : base.Name; }
-            set
-            {
-                if (SetName != null)
-                    SetName(Tag, value);
-                base.Name = value;
-            }
-        }
-
-        public Func<object, string> GetName;
-        public Action<object, string> SetName;
-    }
-
-
-private void UpdateItemsSource()
-        {
-            if (!_isTemplateApplied)
-                return;
-            if (_items != null)
-            {
-                _items.ItemPropertyChanged -= Items_ItemPropertyChanged;
-                _items.CollectionChanged -= Items_CollectionChanged;
-                _items.Dispose();
-            }
-            if (_originalItems != null)
-            {
-                _originalItems.CollectionChanged -= OriginalItems_CollectionChanged;
-            }
-            if (_asyncTimer != null)
-            {
-                _asyncTimer.Stop();
-                _asyncTimer.Tick -= AsyncTimer_Tick;
-                _asyncTimer = null;
-            }
-            _originalItems = Items;
-            ItemsSource = null;
-            if (_originalItems == null)
-            {
-                return;
-            }
-            foreach (DataTreeGridItem current in _originalItems)
-            {
-                AttachItem(current);
-            }
-            _items = new DataTreeGridItemCollection();
-            if (!IsAsyncPresentationEnabled)
-            {
-                _asyncItemCount = 0;
-                foreach (DataTreeGridItem current2 in _originalItems)
-                {
-                    _items.Add(current2);
-                }
-                _asyncItemCount = -1;
-            }
-            else
-            {
-                _asyncItemCount = 0;
-                int num = Math.Min(_originalItems.Count, IsAsyncPresentationEnabledMinCount);
-                for (int i = 0; i < num; i++)
-                {
-                    _items.Add(_originalItems[i]);
-                }
-                _asyncItemCount = num;
-                if (_asyncTimer == null)
-                {
-                    _asyncTimer = new DispatcherTimer();
-                    _asyncTimer.Tick += AsyncTimer_Tick;
-                }
-                _asyncTimer.Start();
-            }
-            _originalItems.CollectionChanged += OriginalItems_CollectionChanged;
-            _internalUpdateItemsSourceCount++;
-            Dispatcher.BeginInvoke(new ThreadStart(delegate
-            {
-                if (--this._internalUpdateItemsSourceCount > 0)
-                {
-                    return;
-                }
-                this._items.CollectionChanged += this.Items_CollectionChanged;
-                this._items.ItemPropertyChanged += this.Items_ItemPropertyChanged;
-            }), new object[0]);
-            ItemsSource = _items;
-            UpdateActualNodeCollapsibility();
-        }
-
-
-    public class ObservableObject : INotifyPropertyChanged
-    {
-        public event PropertyChangedEventHandler PropertyChanged;
-
-        protected void RaisePropertyChanged([CallerMemberName] string propertyName = "")
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
-    }
-
-    public class ViewModelBase : INotifyPropertyChanged
-    {
-        public event PropertyChangedEventHandler PropertyChanged;
-
-        protected void RaisePropertyChanged([CallerMemberName] string propertyName = "")
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
-
-        public virtual void Initialize()
-        {
-
-        }
-
-        public virtual void Save()
-        {
-
-        }
-
-        public virtual void Cancel()
-        {
-
-        }
-
-        public virtual void Close()
-        {
-
-        }
-    }
+}
