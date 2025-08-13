@@ -1,4 +1,206 @@
-using Pilot.HwTool.Core;
+Чтобы исключить отображение `ParameterSectionType` в `LibraryViewModel`, сохранив при этом его в модели данных, внесем следующие изменения:
+
+### 1. Модифицируем метод `LoadLibraries` для фильтрации
+```csharp
+private async Task LoadLibraries()
+{
+    DeviceDescription platformDescription = null;
+    try
+    {
+        var files = Directory.GetFiles("libraries", "*.xml");
+        foreach (var item in files)
+        {
+            platformDescription = await Pilot.XmlHelper.DeserializeAsync<DeviceDescription>(item);
+            platformDescription._Name = Path.GetFileName(item);
+            
+            // Применяем фильтрацию перед добавлением
+            FilterParameterSections(platformDescription);
+            
+            ComponentService.ApplyComponents(platformDescription);
+            Thread.Sleep(1);
+
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                HwRoot.Add(platformDescription);
+            });
+        }
+    }
+    catch (Exception e)
+    {
+        // Обработка ошибок
+    }
+}
+```
+
+### 2. Добавляем метод фильтрации
+```csharp
+private void FilterParameterSections(DeviceDescription description)
+{
+    // Обрабатываем ParameterSet, если он есть
+    if (description.ParameterSet?.Items != null)
+    {
+        var filteredItems = new List<_DeviceDescriptionNode>();
+        
+        foreach (var node in description.ParameterSet.Items)
+        {
+            if (node is ParameterSectionType section)
+            {
+                // Добавляем только дочерние элементы секции
+                if (section.Items != null)
+                {
+                    filteredItems.AddRange(section.Items);
+                }
+            }
+            else
+            {
+                filteredItems.Add(node);
+            }
+        }
+        
+        description.ParameterSet.Items = new DeviceDescriptionNodeCollection(null, filteredItems);
+    }
+}
+```
+
+### 3. Альтернативный вариант (если нужно сохранить оригинальные данные)
+Создадим отдельную коллекцию для отображения:
+```csharp
+public ObservableCollection<_DeviceDescriptionNode> FilteredHwRoot { get; } = new();
+
+private void RefreshFilteredView()
+{
+    FilteredHwRoot.Clear();
+    foreach (var rootNode in HwRoot)
+    {
+        if (rootNode is DeviceDescription desc)
+        {
+            var filtered = new DeviceDescription
+            {
+                _Name = desc._Name,
+                Types = desc.Types,
+                ParameterSet = desc.ParameterSet != null 
+                    ? new DeviceDescriptionParameterSet 
+                    { 
+                        Items = FilterNodes(desc.ParameterSet.Items) 
+                    } 
+                    : null
+            };
+            FilteredHwRoot.Add(filtered);
+        }
+        else
+        {
+            FilteredHwRoot.Add(rootNode);
+        }
+    }
+}
+
+private DeviceDescriptionNodeCollection FilterNodes(DeviceDescriptionNodeCollection source)
+{
+    var filtered = new List<_DeviceDescriptionNode>();
+    foreach (var node in source)
+    {
+        if (node is ParameterSectionType section)
+        {
+            filtered.AddRange(section.Items ?? Enumerable.Empty<_DeviceDescriptionNode>());
+        }
+        else
+        {
+            filtered.Add(node);
+        }
+    }
+    return new DeviceDescriptionNodeCollection(null, filtered);
+}
+```
+
+### 4. Обновляем биндинги в XAML
+Замените привязку с `HwRoot` на `FilteredHwRoot`:
+```xml
+<TreeView ItemsSource="{Binding FilteredHwRoot}"/>
+```
+
+### 5. Важные нюансы:
+1. **Сохранение оригинальных данных**:
+   - Оригинальная коллекция `HwRoot` остается неизменной
+   - Фильтрация применяется только для отображения
+
+2. **Производительность**:
+   - Для больших библиотек используйте `VirtualizingStackPanel`:
+     ```xml
+     <TreeView.ItemsPanel>
+         <ItemsPanelTemplate>
+             <VirtualizingStackPanel/>
+         </ItemsPanelTemplate>
+     </TreeView.ItemsPanel>
+     ```
+
+3. **Обновление при изменениях**:
+   - Если данные динамически меняются, вызывайте `RefreshFilteredView()`
+
+4. **Совместимость с экспортом**:
+   - Метод `Export_CCodeExecute` будет работать корректно, так как использует `SelectedNode` из оригинальной модели
+
+### Полный модифицированный класс:
+```csharp
+[Export]
+[PartCreationPolicy(CreationPolicy.NonShared)]
+public class LibraryViewModel : ViewModelBase
+{
+    // Оригинальная коллекция (полные данные)
+    public ObservableCollection<_DeviceDescriptionNode> HwRoot { get; } = new();
+
+    // Отфильтрованная коллекция (без ParameterSectionType)
+    public ObservableCollection<_DeviceDescriptionNode> FilteredHwRoot { get; } = new();
+
+    [ImportingConstructor]
+    public LibraryViewModel()
+    {
+        // ... инициализация команд ...
+    }
+
+    private async Task LoadLibraries()
+    {
+        // ... загрузка данных в HwRoot ...
+        RefreshFilteredView(); // Обновляем отфильтрованное представление
+    }
+
+    private void RefreshFilteredView()
+    {
+        FilteredHwRoot.Clear();
+        foreach (var rootNode in HwRoot)
+        {
+            if (rootNode is DeviceDescription desc)
+            {
+                var filtered = new DeviceDescription
+                {
+                    _Name = desc._Name,
+                    Types = desc.Types,
+                    ParameterSet = desc.ParameterSet != null 
+                        ? new DeviceDescriptionParameterSet 
+                        { 
+                            Items = FilterNodes(desc.ParameterSet.Items) 
+                        } 
+                        : null
+                };
+                FilteredHwRoot.Add(filtered);
+            }
+            else
+            {
+                FilteredHwRoot.Add(rootNode);
+            }
+        }
+    }
+
+    // ... остальные методы без изменений ...
+}
+```
+
+Эти изменения:
+1. Сохранят `ParameterSectionType` в исходных данных
+2. Исключат его из отображения
+3. Не повлияют на функциональность экспорта/импорта
+4. Поддержат правильную вложенность элементов
+5.
+6. using Pilot.HwTool.Core;
 using Pilot.HwTool.Mvvm;
 using Pilot.HwTool.Mvvm.Helpers;
 using Pilot.TargetPlatform;
