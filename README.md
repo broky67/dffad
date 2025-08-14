@@ -1,3 +1,57 @@
+        public CheckForUpdateClient(string address, NetworkCredential credentials)
+            : base(ConfigureBinding(address), new EndpointAddress(address))
+        {
+            this.Endpoint.Behaviors.Add(new WebHttpBehavior());
+
+            if (address.StartsWith("https://"))
+            {
+                this.ClientCredentials.UserName.UserName = credentials.UserName;
+                this.ClientCredentials.UserName.Password = credentials.Password;
+            }
+        }
+        private static Binding ConfigureBinding(string address)
+        {
+            var binding = new WebHttpBinding
+            {
+                MaxReceivedMessageSize = int.MaxValue,
+                Security = new WebHttpSecurity()
+            };
+
+            if (address.StartsWith("https://"))
+            {
+                binding.Security.Mode = WebHttpSecurityMode.Transport;
+                binding.Security.Transport.ClientCredentialType = HttpClientCredentialType.Basic;
+            }
+            else
+            {
+                binding.Security.Mode = WebHttpSecurityMode.TransportCredentialOnly;
+                binding.Security.Transport.ClientCredentialType = HttpClientCredentialType.Basic;
+            }
+
+            return binding;
+        }
+
+        public VersionDetails GetVersion(string uid, string ver, string lang = "ru")
+        {
+            using (new OperationContextScope(this.InnerChannel))
+            {
+                var authHeader = Convert.ToBase64String(
+                    Encoding.UTF8.GetBytes($"{_credentials.UserName}:{_credentials.Password}"));
+
+                WebOperationContext.Current.OutgoingRequest.Headers.Add(
+                    HttpRequestHeader.Authorization,
+                    $"Basic {authHeader}");
+
+                return base.Channel.GetVersion(uid, ver, lang);
+            }
+        }
+
+
+
+
+
+
+
 Ошибка возникает из-за несоответствия схемы URI (HTTPS) и настроек безопасности в `WebHttpBinding`. Давайте исправим это:
 
 ### Полное решение для HTTPS с Basic Auth
