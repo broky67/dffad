@@ -1,4 +1,129 @@
-        public CheckForUpdateClient(string address, NetworkCredential credentials)
+Ошибка `NullReferenceException` возникает потому что вы используете поле `_credentials`, которое нигде не инициализировано, хотя передаете `credentials` в конструктор. Давайте исправим код:
+
+### Исправленная реализация клиента:
+
+```csharp
+public class CheckForUpdateClient : ClientBase<ICheckForUpdateApi>, ICheckForUpdateApi
+{
+    private readonly NetworkCredential _credentials;
+
+    public CheckForUpdateClient(string address, NetworkCredential credentials)
+        : base(ConfigureBinding(address), new EndpointAddress(address))
+    {
+        _credentials = credentials; // Сохраняем credentials в поле класса
+        this.Endpoint.Behaviors.Add(new WebHttpBehavior());
+
+        if (address.StartsWith("https://"))
+        {
+            this.ClientCredentials.UserName.UserName = credentials.UserName;
+            this.ClientCredentials.UserName.Password = credentials.Password;
+        }
+    }
+
+    private static Binding ConfigureBinding(string address)
+    {
+        var binding = new WebHttpBinding
+        {
+            MaxReceivedMessageSize = int.MaxValue,
+            Security = new WebHttpSecurity()
+        };
+
+        if (address.StartsWith("https://"))
+        {
+            binding.Security.Mode = WebHttpSecurityMode.Transport;
+            binding.Security.Transport.ClientCredentialType = HttpClientCredentialType.Basic;
+        }
+        else
+        {
+            binding.Security.Mode = WebHttpSecurityMode.TransportCredentialOnly;
+            binding.Security.Transport.ClientCredentialType = HttpClientCredentialType.Basic;
+        }
+
+        return binding;
+    }
+
+    public VersionDetails GetVersion(string uid, string ver, string lang = "ru")
+    {
+        using (new OperationContextScope(this.InnerChannel))
+        {
+            // Проверяем наличие credentials
+            if (_credentials == null)
+            {
+                throw new InvalidOperationException("Credentials not initialized");
+            }
+
+            var authHeader = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes($"{_credentials.UserName}:{_credentials.Password}"));
+
+            WebOperationContext.Current.OutgoingRequest.Headers.Add(
+                HttpRequestHeader.Authorization,
+                $"Basic {authHeader}");
+
+            return base.Channel.GetVersion(uid, ver, lang);
+        }
+    }
+}
+```
+
+### Ключевые исправления:
+
+1. **Добавлено поле класса**:
+   ```csharp
+   private readonly NetworkCredential _credentials;
+   ```
+
+2. **Инициализация поля в конструкторе**:
+   ```csharp
+   _credentials = credentials;
+   ```
+
+3. **Проверка на null**:
+   ```csharp
+   if (_credentials == null)
+   {
+       throw new InvalidOperationException("Credentials not initialized");
+   }
+   ```
+
+### Дополнительные улучшения:
+
+1. **Проверка входных параметров**:
+   ```csharp
+   public CheckForUpdateClient(string address, NetworkCredential credentials)
+   {
+       if (string.IsNullOrWhiteSpace(address))
+           throw new ArgumentNullException(nameof(address));
+       
+       if (credentials == null)
+           throw new ArgumentNullException(nameof(credentials));
+       
+       // ... остальной код конструктора
+   }
+   ```
+
+2. **Безопасное использование credentials**:
+   ```csharp
+   try 
+   {
+       var authHeader = Convert.ToBase64String(
+           Encoding.UTF8.GetBytes($"{_credentials.UserName}:{_credentials.Password}"));
+       // ... остальной код
+   }
+   catch (Exception ex)
+   {
+       throw new SecurityException("Failed to create authorization header", ex);
+   }
+   ```
+
+Теперь код должен работать без `NullReferenceException`. Если ошибка сохраняется:
+1. Убедитесь, что вы передаете не-null `credentials` при создании клиента
+2. Проверьте, что `UserName` и `Password` в `credentials` не являются null
+3.
+4.
+5.
+6.
+7.
+8.                             public CheckForUpdateClient(string address, NetworkCredential credentials)
             : base(ConfigureBinding(address), new EndpointAddress(address))
         {
             this.Endpoint.Behaviors.Add(new WebHttpBehavior());
