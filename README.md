@@ -1,3 +1,5 @@
+{"Операция \"GetVersion\" в контракте \"ICheckForUpdateApi\" использует GET, но также содержит параметр текста сообщения \"credentials\". Операции GET не могут содержать текст сообщения. Либо измените параметр \"credentials\" на параметр UriTemplate, либо перейдите с WebGetAttribute на WebInvokeAttribute."}
+
 Понял ситуацию. У вас есть 407 ошибка (требуется аутентификация прокси), и вы пытаетесь добавить NetworkCredentials. Давайте разберёмся, как правильно настроить аутентификацию для вашего `CheckForUpdateClient`.
 
 ### Решение для 407 ошибки (Proxy Authentication Required)
