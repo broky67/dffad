@@ -141,6 +141,17 @@
 </catel:DataWindow>
 
 
+{
+  "product": "scle",
+  "version": "1.2.0.7719",
+  "released": "2024-04-09 13:16:00",
+  "description": "Улучшения:\n- Добавлена возможность лицензирования с USB ключом без кода оборудования;\n- Доработана визуальная часть меню Файл\nИсправления:\n- Исправлен баг загрузки стартовой страницы;",
+  "url": "/soft/scle/downloads/software/scl_express/scle_setup.exe",
+  "Theme": "Основное программное обеспечение",
+  "Section": "SCL Express",
+  "error": "OK"
+}
+
 
 using System;
 using System.IO;
