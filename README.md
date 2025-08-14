@@ -1,116 +1,109 @@
 Вот модифицированный код на русском для обработки JSON и отображения информации о новой версии:
 
-```csharp
 private static void BwOnDoWork(object sender, DoWorkEventArgs e)
-{
-    var bw = (BackgroundWorker)sender;
-    bw.DoWork -= BwOnDoWork;
-
-    CheckForUpdatesResult res = null;
-    var config = ConfigurationManager.GetSection("updater") as UpdaterConfigSection;
-    if (config != null)
-    {
-        var appInfo = GetAppFileInfo();
-        var appVer = new Version(appInfo.FileMajorPart, appInfo.FileMinorPart, 
-                               appInfo.FileBuildPart, appInfo.ProductPrivatePart);
-        
-        foreach (UpdaterElement element in config.Elements)
         {
-            try
-            {
-                var baseUri = new Uri(element.Url);
-                Log.Debug("Отправка запроса по адресу '{0}'", baseUri);
+            var bw = (BackgroundWorker)sender;
+            bw.DoWork -= BwOnDoWork;
 
-                // Создаем HTTP-клиент
-                using (var client = new WebClient())
+            CheckForUpdatesResult res = null;
+            var config = ConfigurationManager.GetSection("updater") as UpdaterConfigSection;
+            if (config != null)
+            {
+                var appInfo = GetAppFileInfo();
+                var appVer = new Version(appInfo.FileMajorPart, appInfo.FileMinorPart, appInfo.FileBuildPart, appInfo.ProductPrivatePart);
+                foreach (UpdaterElement element in config.Elements)
                 {
-                    // Загружаем JSON
-                    var json = client.DownloadString(baseUri);
-                    
-                    // Преобразуем JSON в объект
-                    var updateInfo = JsonConvert.DeserializeObject<UpdateInfo>(json);
-                    
-                    // Проверяем наличие ошибок
-                    if (updateInfo.error != "OK")
+                    var baseUri = new Uri(element.Url);
+
+                    Log.Debug("Send request to '{0}'", baseUri);
+
+                    RequestMessage req = new RequestMessage
                     {
-                        Log.Error("Ошибка при проверке обновлений: " + updateInfo.error);
-                        res = new CheckForUpdatesResult { State = UpdateState.ConnectionError };
-                        continue;
+                        Product = appInfo.ProductName,
+                        User = System.Environment.UserName,
+                        Data = new RequestMessageData
+                        {
+                            Name = System.Environment.MachineName,
+                            User = System.Environment.UserName,
+                            OS = System.Environment.OSVersion.ToString(),
+                            Is64Bit = System.Environment.Is64BitOperatingSystem,
+                            UpdateInterval = _intervalKind.ToString(),
+                            Credential = new NetworkCredential(
+                                userName: "ekra",
+                                password: "test")
+                        },
+                    };
+
+                    VersionDetails resp = null;
+
+                    var credential = new NetworkCredential(
+                                userName: "",
+                                password: "");
+                    try
+                    {
+                        var appKey = LicenseHandler.GenerateUID("UnifiedPilotApp").ToLower(); //TODO: remove hard reference
+                        ICheckForUpdateApi webClient = new CheckForUpdateClient(baseUri.ToString());
+                        resp = webClient.GetVersion(appKey, ver: appVer.ToString(), credential, lang: "ru");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Info(ex.Message);
                     }
 
-                    // Парсим версию из ответа
-                    var remoteVersion = Version.Parse(updateInfo.version);
-                    
-                    // Сравниваем версии
-                    bool isNewVersionAvailable = remoteVersion > appVer || 
-                        (_ignoreRevision && new Version(remoteVersion.Major, remoteVersion.Minor, remoteVersion.Build) > 
-                        new Version(appVer.Major, appVer.Minor, appVer.Build));
-                    
-                    if (isNewVersionAvailable)
+                    if (resp != null && resp.ErrorMsg == "OK")
                     {
-                        res = new CheckForUpdatesResult
+                        Log.Debug("Received valid response. Latest version: {0}", resp.Version);
+
+                        Version newest;
+                        if (!Version.TryParse(resp.Version, out newest))
+                            newest = new Version();
+
+                        res = new CheckForUpdatesResult(true)
                         {
-                            State = UpdateState.Available,
-                            RemoteVersion = remoteVersion,
-                            ReleaseDate = DateTime.Parse(updateInfo.released),
-                            Notes = updateInfo.description,
-                            DownloadUrl = new Uri(new Uri(baseUri.GetLeftPart(UriPartial.Authority)), updateInfo.url)
+                            RemoteVer = newest,
+                            RemoteMajor = newest.Major,
+                            RemoteMinor = newest.Minor,
+                            RemoteBuild = newest.Build,
+                            RemoteRevision = newest.Revision,
+                            RemoteDate = resp.Released,
+                            RemoteNotes = resp.Description,
+                            RemoteUrl = resp.Url,
                         };
+                        break;
                     }
                     else
                     {
-                        res = new CheckForUpdatesResult { State = UpdateState.NotAvailable };
+                        Log.Debug("Received invalid response!");
                     }
                 }
             }
-            catch (Exception ex)
+            e.Result = res;
+        }
+
+
+    public class CheckForUpdateClient : ClientBase<ICheckForUpdateApi>, ICheckForUpdateApi
+    {
+        public CheckForUpdateClient(string address)
+            : base(new WebHttpBinding() { MaxReceivedMessageSize = int.MaxValue }, new EndpointAddress(address))
+        {
+            if (this.Endpoint.ListenUri.Scheme == "https")
             {
-                Log.Error("Ошибка при проверке обновлений", ex);
-                res = new CheckForUpdatesResult { State = UpdateState.ConnectionError };
+                // configure SSL
+                var binding = (WebHttpBinding)this.Endpoint.Binding;
+                binding.Security.Mode = WebHttpSecurityMode.Transport;
+            }
+
+            this.Endpoint.Behaviors.Add(new WebHttpBehavior());
+        }
+
+        public VersionDetails GetVersion(string uid, string ver, NetworkCredential credentials, string lang = "ru")
+        {
+            using (new OperationContextScope(this.InnerChannel))
+            {
+                var test = base.Channel.GetVersion(uid, ver, credentials, lang);
+                return test;
             }
         }
-    }
-
-    e.Result = res ?? new CheckForUpdatesResult { State = UpdateState.ConnectionError };
-}
-
-// Класс для десериализации JSON
-public class UpdateInfo
-{
-    public string product { get; set; }       // Название продукта
-    public string version { get; set; }       // Версия (например "1.2.0.7719")
-    public string released { get; set; }      // Дата выпуска ("2024-04-09 13:16:00")
-    public string description { get; set; }   // Описание изменений
-    public string url { get; set; }           // URL для скачивания
-    public string Theme { get; set; }         // Тема
-    public string Section { get; set; }       // Раздел
-    public string error { get; set; }         // Статус ошибки ("OK" если успешно)
-}
-```
-
-### Что изменилось:
-
-1. **Обработка JSON**:
-   - Добавлен класс `UpdateInfo` для десериализации JSON-ответа
-   - Используется `JsonConvert.DeserializeObject` для преобразования JSON в объект
-
-2. **Сравнение версий**:
-   - Версия парсится из строки `version` (например "1.2.0.7719")
-   - Учитывается настройка `IgnoreRevision` для сравнения без учета ревизии
-
-3. **Формирование результата**:
-   - При наличии новой версии заполняются:
-     - Номер версии (`RemoteVersion`)
-     - Дата выпуска (`ReleaseDate`)
-     - Список изменений (`Notes`)
-     - Ссылка для скачивания (`DownloadUrl`)
-
-4. **Отображение в интерфейсе**:
-   - Ваш XAML уже содержит привязки к этим свойствам
-   - Версия отображается через `{Binding Remote}`
-   - Список изменений через `{Binding Notes}` в MarkdownBox
-   - Ссылка для скачивания через Hyperlink
-
 ### Доработки в ViewModel:
 
 Добавьте в ваш `UpdateDialogViewModel` следующие свойства:
