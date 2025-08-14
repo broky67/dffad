@@ -1,3 +1,139 @@
+Если вы убрали `credentials` из параметров метода в интерфейсе, передавать их нужно через **HTTP-заголовки**. Вот как это правильно реализовать:
+
+---
+
+### 1. Модифицируем интерфейс (убираем credentials из параметров)
+```csharp
+[ServiceContract]
+public interface ICheckForUpdateApi
+{
+    [OperationContract]
+    [WebGet(UriTemplate = "check/{uid}?ver={ver}&lang={lang}", 
+            ResponseFormat = WebMessageFormat.Json)]
+    VersionDetails GetVersion(string uid, string ver, string lang = "ru");
+}
+```
+
+---
+
+### 2. Реализация клиента с передачей credentials в заголовках
+```csharp
+public class CheckForUpdateClient : ClientBase<ICheckForUpdateApi>, ICheckForUpdateApi
+{
+    private readonly NetworkCredential _credentials;
+
+    public CheckForUpdateClient(string address, NetworkCredential credentials)
+        : base(new WebHttpBinding() { 
+            MaxReceivedMessageSize = int.MaxValue,
+            Security = new WebHttpSecurity {
+                Mode = WebHttpSecurityMode.TransportCredentialOnly,
+                Transport = new HttpTransportSecurity {
+                    ClientCredentialType = HttpClientCredentialType.Basic
+                }
+            }
+        }, new EndpointAddress(address))
+    {
+        _credentials = credentials;
+        this.Endpoint.Behaviors.Add(new WebHttpBehavior());
+    }
+
+    public VersionDetails GetVersion(string uid, string ver, string lang = "ru")
+    {
+        using (new OperationContextScope(this.InnerChannel))
+        {
+            // Добавляем Basic Auth в заголовки
+            var authHeader = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes($"{_credentials.UserName}:{_credentials.Password}"));
+
+            WebOperationContext.Current.OutgoingRequest.Headers.Add(
+                HttpRequestHeader.Authorization, 
+                $"Basic {authHeader}");
+
+            return base.Channel.GetVersion(uid, ver, lang);
+        }
+    }
+}
+```
+
+---
+
+### 3. Использование в коде проверки обновлений
+```csharp
+private static void BwOnDoWork(object sender, DoWorkEventArgs e)
+{
+    // ... предыдущий код
+    
+    try
+    {
+        var appKey = LicenseHandler.GenerateUID("UnifiedPilotApp").ToLower();
+        var credentials = new NetworkCredential("ekra", "test"); // или получайте из конфига
+        var webClient = new CheckForUpdateClient(baseUri.ToString(), credentials);
+        
+        resp = webClient.GetVersion(appKey, appVer.ToString(), "ru");
+    }
+    catch (Exception ex)
+    {
+        Log.Error("Ошибка авторизации", ex);
+    }
+    
+    // ... обработка результата
+}
+```
+
+---
+
+### Ключевые моменты:
+
+1. **Где хранятся credentials**:
+   - Теперь они передаются в конструктор клиента и хранятся в поле `_credentials`
+
+2. **Как передаются**:
+   - Через стандартный HTTP-заголовок `Authorization: Basic <base64>`
+
+3. **Безопасность**:
+   ```csharp
+   // Всегда используйте HTTPS для Basic Auth!
+   Mode = WebHttpSecurityMode.Transport // вместо TransportCredentialOnly
+   ```
+
+4. **Альтернатива для сложных случаев**:
+   Если сервер требует особый формат аутентификации, можно добавить кастомный заголовок:
+   ```csharp
+   WebOperationContext.Current.OutgoingRequest.Headers.Add(
+       "X-Auth-Token", 
+       "your-special-token");
+   ```
+
+---
+
+### Если сервер требует POST с телом:
+
+1. Измените интерфейс:
+```csharp
+[WebInvoke(Method = "POST", UriTemplate = "check", BodyStyle = WebMessageBodyStyle.WrappedRequest)]
+VersionDetails GetVersion(CheckRequest request);
+```
+
+2. Создайте DTO-класс:
+```csharp
+[DataContract]
+public class CheckRequest
+{
+    [DataMember] public string Uid { get; set; }
+    [DataMember] public string Ver { get; set; }
+    [DataMember] public string Lang { get; set; }
+    [DataMember] public NetworkCredential Credentials { get; set; }
+}
+```
+
+Выбор способа зависит от требований серверного API.
+
+
+
+
+
+
+
 Ошибка возникает из-за несоответствия между объявлением контракта WCF и его реализацией. Давайте исправим это:
 
 ### Проблема:
