@@ -1,3 +1,453 @@
+using System;
+using System.IO;
+using System.Reflection;
+using System.Runtime.Serialization;
+using System.ServiceModel;
+using System.ServiceModel.Web;
+
+namespace Module.Updater.Rest
+{
+    [ServiceContract]
+    public interface ICheckForUpdateApi
+    {
+        [OperationContract]
+        [WebGet(UriTemplate = "check/{uid}?ver={ver}&lang={lang}", ResponseFormat = WebMessageFormat.Json)]
+        VersionDetails GetVersion(string uid, string ver, string lang = "ru");
+
+        [OperationContract]
+        [WebGet(UriTemplate = "download/{uid}?ver={ver}")]
+        Stream Download(string uid, string ver);
+
+        [OperationContract]
+        [WebInvoke(Method = "POST", UriTemplate = "upload/{uid}?filename={filename}")]
+        void Upload(string uid, string filename, Stream stream);
+
+        [OperationContract]
+        [WebGet]
+        string Echo(string input);
+    }
+
+    [Obfuscation(Exclude = true)]
+    [DataContract(Name = "details", Namespace = "http://schemas.ekra.ru/2019/11/PilotApp")]
+    public class VersionDetails
+    {
+        [DataMember(Name = "product")]
+        public string Name;
+
+        [DataMember(Name = "version")]
+        public string Version;
+
+        [DataMember(Name = "released")]
+        public string Released { get; set; }
+
+        [DataMember(Name = "description")]
+        public string Description { get; set; }
+
+        [DataMember(Name = "error")]
+        public string ErrorMsg { get; set; }
+
+        [DataMember(Name = "url")]
+        public string Url;
+
+        public override string ToString()
+        {
+            return string.Format("name = '{0}'; version = {1}; url = {2}", Name, Version, Url);
+        }
+    }
+
+    [DataContract]
+    public class RemoteFileInfo : IDisposable
+    {
+        [DataMember(Name = "name")]
+        public string FileName;
+
+        [DataMember(Name = "length")]
+        public long FileLength;
+
+        [DataMember(Name = "data", Order = 1)]
+        public Stream FileStream;
+
+        public void Dispose()
+        {
+            if (FileStream != null)
+            {
+                FileStream.Close();
+                FileStream = null;
+            }
+        }
+    }
+}
+
+using System;
+using System.ComponentModel;
+using System.ComponentModel.Composition;
+using System.Configuration;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Text;
+using Module.Updater.Dialogs;
+using Module.Updater.Rest;
+using Pilot.Licensing;
+using Pilot.Shell.Infrastructure.Logging;
+using Pilot.Shell.Infrastructure.Services;
+
+namespace Module.Updater
+{
+    [Export(typeof(IUpdateController))]
+    [PartCreationPolicy(CreationPolicy.Shared)]
+    public class UpdateControllerImpl : IUpdateController
+    {
+        private static readonly ILog Log = LogManager.GetCurrentClassLogger();
+        private readonly IUIVisualizerService _uiVisualizerService;
+        private readonly IWorkspaceManager _workspaceManager;
+        private static System.Windows.Threading.DispatcherTimer timer = new System.Windows.Threading.DispatcherTimer();
+        private UpdateDialogViewModel _dialog;
+        private DateTime _lastCheck;
+        private static UpdateIntervalKind _intervalKind;
+        private static bool _ignoreRevision;
+        private int _tickCount;
+        private const string DefaultUrl = /*"https://soft.ekra.ru/scle/software/"*/ "https://soft-ekra.tw1.ru/soft/scle/updates/check?uid=%22amdjsp-l6bc6j-t6c14j-hzy4v9%22";
+
+#pragma warning disable 0649
+        [Import]
+        private ExportFactory<UpdateDialogViewModel> _updateDialog;
+#pragma warning restore 0649
+
+        [ImportingConstructor]
+        public UpdateControllerImpl(IWorkspaceManager workspaceManager, IUIVisualizerService uiVisualizerService)
+        {
+            _workspaceManager = workspaceManager;
+            _uiVisualizerService = uiVisualizerService;
+
+            _workspaceManager.ShellClosing += WorkspaceManagerOnShellClosing;
+
+            LoadSettings();
+
+            // keep the current value
+            var intervalKind = GetInterval();
+
+            if (intervalKind != UpdateIntervalKind.OnStartup)
+                SetInterval(UpdateIntervalKind.Never); // send an anonymous update request even when 'Never' selected
+            else
+                SetInterval(UpdateIntervalKind.OnStartup);
+
+            timer.Tick += (sender, args) =>
+            {
+                _tickCount++;
+
+                #region MyRegion
+                if (_tickCount == 1)
+                {
+                    // restore the interval value at first tick
+                    SetInterval(intervalKind);
+
+                    var current = timer.Interval;
+                    var elapsed = DateTime.Now - _lastCheck;
+                    Log.Info("Last check for updates time '{0}'.", _lastCheck);
+                    if (elapsed < current)
+                    {
+                        timer.Interval = current - elapsed;
+                        Log.Debug("Adjust update timer interval with '{0}'.", timer.Interval);
+                    }
+                }
+                else
+                {
+                    // re-apply the interval value at every ticks
+                    SetInterval(_intervalKind);
+                }
+                #endregion
+
+                if (_intervalKind != UpdateIntervalKind.Never)
+                    _lastCheck = DateTime.Now;
+
+                Log.Info("Begin check for updates...");
+
+                CheckForUpdates(true);
+            };
+
+#if !DEBUG
+            // start the update timer for Never or OnStartup interval selected
+            timer.Start();
+#endif
+        }
+
+        private void WorkspaceManagerOnShellClosing(object sender, CancelEventArgs e)
+        {
+            SaveSettings();
+        }
+
+        public UpdateIntervalKind GetInterval()
+        {
+            return _intervalKind;
+        }
+
+        public void SetInterval(UpdateIntervalKind kind)
+        {
+            _intervalKind = kind;
+
+            Log.Debug("Setup check for updates interval '{0}'", kind);
+
+            timer.Stop();
+
+            switch (kind)
+            {
+                case UpdateIntervalKind.Never:
+                    timer.Interval = TimeSpan.FromSeconds(3);
+                    break;
+                case UpdateIntervalKind.OnStartup:
+                    timer.Interval = TimeSpan.FromSeconds(10);
+                    break;
+                case UpdateIntervalKind.Hour:
+                    timer.Interval = TimeSpan.FromHours(1);
+                    timer.Start();
+                    break;
+                case UpdateIntervalKind.Day:
+                    timer.Interval = TimeSpan.FromDays(1);
+                    timer.Start();
+                    break;
+                case UpdateIntervalKind.Week:
+                    timer.Interval = TimeSpan.FromDays(7);
+                    timer.Start();
+                    break;
+            }
+
+            Log.Debug("Setup update timer interval with '{0}'. Update timer is {1}.", timer.Interval, timer.IsEnabled? "started" : "stopped");
+        }
+
+        public object GetProperty(string propertyName)
+        {
+            switch (propertyName)
+            {
+                case "Interval":
+                    return _intervalKind;
+                case "IgnoreRevision":
+                    return _ignoreRevision;
+            }
+            return null;
+        }
+
+        public void SetProperty(string propertyName, object propertValue)
+        {
+            switch (propertyName)
+            {
+                case "Interval":
+                    _intervalKind = (UpdateIntervalKind)propertValue; return;
+                case "IgnoreRevision":
+                    _ignoreRevision = (bool)propertValue; return;
+            }
+        }
+
+        private void LoadSettings()
+        {
+            if (!DateTime.TryParse(Properties.Settings.Default.LastCheck, CultureInfo.InvariantCulture, DateTimeStyles.None, out _lastCheck))
+            {
+                _lastCheck = DateTime.Now;
+            }
+
+            if (!Enum.TryParse(Properties.Settings.Default.Interval, out _intervalKind))
+            {
+                _intervalKind = UpdateIntervalKind.Hour;
+            }
+
+            if (!bool.TryParse(Properties.Settings.Default.IgnoreRevision, out _ignoreRevision))
+            {
+                _ignoreRevision = false;
+            }
+        }
+
+        private void SaveSettings()
+        {
+            Properties.Settings.Default.LastCheck = DateTime.Now.ToString(CultureInfo.InvariantCulture);
+            Properties.Settings.Default.Interval = _intervalKind.ToString();
+            Properties.Settings.Default.IgnoreRevision = _ignoreRevision.ToString();
+            Properties.Settings.Default.Save();
+        }
+
+        public bool CheckForUpdates(bool silent)
+        {
+            if (_dialog == null || _dialog.IsClosed)
+            {
+                // create a new instance of dialog VM every time
+                _dialog = _updateDialog.CreateExport().Value;
+            }
+
+            //if (silent || _intervalKind != UpdateIntervalKind.Never)
+            {
+                if (_dialog.State == UpdateState.Busy)
+                    return false;
+
+                _dialog.Url = DefaultUrl;
+                _dialog.State = UpdateState.Busy;
+
+                BackgroundWorker bw = new BackgroundWorker();
+                bw.DoWork += BwOnDoWork;
+                bw.RunWorkerCompleted += BwOnRunWorkerCompleted;
+                bw.RunWorkerAsync();
+            }
+
+            if (!silent)
+            {
+                ShowDialog();
+            }
+
+            return true;
+        }
+
+        private static void BwOnDoWork(object sender, DoWorkEventArgs e)
+        {
+            var bw = (BackgroundWorker)sender;
+            bw.DoWork -= BwOnDoWork;
+
+            CheckForUpdatesResult res = null;
+            var config = ConfigurationManager.GetSection("updater") as UpdaterConfigSection;
+            if (config != null)
+            {
+                var appInfo = GetAppFileInfo();
+                var appVer = new Version(appInfo.FileMajorPart, appInfo.FileMinorPart, appInfo.FileBuildPart, appInfo.ProductPrivatePart);
+                foreach (UpdaterElement element in config.Elements)
+                {
+                    var baseUri = new Uri(element.Url);
+
+                    Log.Debug("Send request to '{0}'", baseUri);
+
+                    RequestMessage req = new RequestMessage
+                    {
+                        Product = appInfo.ProductName,
+                        User = System.Environment.UserName,
+                        Data = new RequestMessageData
+                        {
+                            Name = System.Environment.MachineName,
+                            User = System.Environment.UserName,
+                            OS = System.Environment.OSVersion.ToString(),
+                            Is64Bit = System.Environment.Is64BitOperatingSystem,
+                            UpdateInterval = _intervalKind.ToString(),
+                        },
+                    };
+
+                    VersionDetails resp = null;
+
+                    try
+                    {
+                        var appKey = LicenseHandler.GenerateUID("UnifiedPilotApp").ToLower(); //TODO: remove hard reference
+                        ICheckForUpdateApi webClient = new CheckForUpdateClient(baseUri.ToString());
+                        resp = webClient.GetVersion(appKey, ver: appVer.ToString(), lang: "ru");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Info(ex.Message);
+                    }
+
+                    if (resp != null && resp.ErrorMsg == "OK")
+                    {
+                        Log.Debug("Received valid response. Latest version: {0}", resp.Version);
+
+                        Version newest;
+                        if (!Version.TryParse(resp.Version, out newest))
+                            newest = new Version();
+
+                        res = new CheckForUpdatesResult(true)
+                        {
+                            RemoteVer = newest,
+                            RemoteMajor = newest.Major,
+                            RemoteMinor = newest.Minor,
+                            RemoteBuild = newest.Build,
+                            RemoteRevision = newest.Revision,
+                            RemoteDate = resp.Released,
+                            RemoteNotes = resp.Description,
+                            RemoteUrl = resp.Url,
+                        };
+                        break;
+                    }
+                    else
+                    {
+                        Log.Debug("Received invalid response!");
+                    }
+                }
+            }
+            e.Result = res;
+        }
+
+        private void BwOnRunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        {
+            var bw = (BackgroundWorker)sender;
+            bw.RunWorkerCompleted -= BwOnRunWorkerCompleted;
+
+            if (e.Cancelled)
+                return;
+
+            var res = e.Result as CheckForUpdatesResult;
+            if (res == null || !res.Result)
+            {
+                _dialog.State = UpdateState.ConnectionError;
+                return;
+            }
+
+            var remoteVer = res.RemoteVer;
+            var appInfo = GetAppFileInfo();
+            var appVer = new Version(appInfo.FileMajorPart, appInfo.FileMinorPart, appInfo.FileBuildPart, appInfo.ProductPrivatePart);
+
+            var remote = (_dialog.IgnoreRevision)
+                ? new Version(remoteVer.Major, remoteVer.Minor, remoteVer.Build)
+                : remoteVer;
+
+            var local = (_dialog.IgnoreRevision)
+                ? new Version(appVer.Major, appVer.Minor, appVer.Build)
+                : appVer;
+
+#if DEBUG
+            // uncomment the following line to display the remote information anyway
+            //local = new Version("0.0.0.0");
+#endif
+
+            if (remote > local)
+            {
+                _dialog.Local = appVer.ToString();
+                _dialog.Remote = res.RemoteVer.ToString();
+                _dialog.Url = res.RemoteUrl;
+                _dialog.Notes = res.RemoteNotes;
+                _dialog.State = UpdateState.Available;
+
+                if (_intervalKind != UpdateIntervalKind.Never)
+                {
+                    // do not show dialog when we send anonymous update request
+                    ShowDialog();
+                }
+            }
+            else
+            {
+                _dialog.State = UpdateState.NotAvailable;
+            }
+        }
+
+        /// <summary>
+        /// Gets the application file info.
+        /// </summary>
+        /// <returns></returns>
+        private static FileVersionInfo GetAppFileInfo()
+        {
+            var assembly = System.Reflection.Assembly.GetEntryAssembly();
+            //var name = assembly.GetName();
+            var appInfo = FileVersionInfo.GetVersionInfo(assembly.Location);
+            //var appVer = new Version(appInfo.FileMajorPart, appInfo.FileMinorPart, appInfo.FileBuildPart, appInfo.ProductPrivatePart);
+            return appInfo;
+        }
+
+        private void ShowDialog()
+        {
+            if (_dialog.IsInitialized)
+                return;
+
+            // create dialog instance
+            if (_uiVisualizerService.ShowDialog(_dialog) == true)
+            {
+                return;
+            }
+        }
+    }
+}
+
+
 Понял, игнорируем предыдущие обсуждения про `ParameterType` и `ParameterSectionType`. Давайте полностью пересоберем `FindToolViewModel` для нового задания - поиска по активному проекту с отображением результатов в диалоговом окне.
 
 ### Полная реализация FindToolViewModel
