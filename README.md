@@ -1,3 +1,103 @@
+Ошибка возникает из-за несоответствия схемы URI (HTTPS) и настроек безопасности в `WebHttpBinding`. Давайте исправим это:
+
+### Полное решение для HTTPS с Basic Auth
+
+1. **Исправленный клиент**:
+```csharp
+public class CheckForUpdateClient : ClientBase<ICheckForUpdateApi>, ICheckForUpdateApi
+{
+    public CheckForUpdateClient(string address, NetworkCredential credentials)
+        : base(ConfigureBinding(address), new EndpointAddress(address))
+    {
+        this.Endpoint.Behaviors.Add(new WebHttpBehavior());
+        
+        // Настройка credentials
+        if (address.StartsWith("https://"))
+        {
+            this.ClientCredentials.UserName.UserName = credentials.UserName;
+            this.ClientCredentials.UserName.Password = credentials.Password;
+        }
+    }
+
+    private static Binding ConfigureBinding(string address)
+    {
+        var binding = new WebHttpBinding 
+        {
+            MaxReceivedMessageSize = int.MaxValue,
+            Security = new WebHttpSecurity()
+        };
+
+        if (address.StartsWith("https://"))
+        {
+            binding.Security.Mode = WebHttpSecurityMode.Transport;
+            binding.Security.Transport.ClientCredentialType = HttpClientCredentialType.Basic;
+        }
+        else
+        {
+            binding.Security.Mode = WebHttpSecurityMode.TransportCredentialOnly;
+            binding.Security.Transport.ClientCredentialType = HttpClientCredentialType.Basic;
+        }
+
+        return binding;
+    }
+
+    public VersionDetails GetVersion(string uid, string ver, string lang = "ru")
+    {
+        using (new OperationContextScope(this.InnerChannel))
+        {
+            // Добавляем Basic Auth header
+            var authHeader = $"Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ClientCredentials.UserName.UserName}:{ClientCredentials.UserName.Password}"))}";
+            WebOperationContext.Current.OutgoingRequest.Headers.Add(HttpRequestHeader.Authorization, authHeader);
+
+            return base.Channel.GetVersion(uid, ver, lang);
+        }
+    }
+}
+```
+
+2. **Использование клиента**:
+```csharp
+try
+{
+    var credentials = new NetworkCredential("ekra", "test");
+    var client = new CheckForUpdateClient("https://new-server.com/api", credentials);
+    var response = client.GetVersion("app123", "1.0.0");
+}
+catch (Exception ex)
+{
+    // Обработка ошибок
+}
+```
+
+### Ключевые исправления:
+
+1. **Автоматическое определение схемы**:
+   - Клиент сам определяет, использовать HTTPS или HTTP
+   - Правильно настраивает `WebHttpSecurityMode`
+
+2. **Безопасность для HTTPS**:
+   ```csharp
+   binding.Security.Mode = WebHttpSecurityMode.Transport; // Для HTTPS
+   ```
+
+3. **Поддержка Basic Auth**:
+   - Credentials передаются через стандартный механизм WCF
+   - Дублируются в заголовке для совместимости
+
+### Дополнительные настройки:
+
+Если требуется обход SSL-ошибок (для тестовых серверов с самоподписанными сертификатами):
+```csharp
+// Добавьте перед созданием клиента
+ServicePointManager.ServerCertificateValidationCallback += 
+    (sender, cert, chain, sslPolicyErrors) => true; // Не использовать в production!
+```
+
+Для production-окружения лучше добавить правильную валидацию сертификата.
+
+Эта реализация должна работать как с HTTP, так и с HTTPS endpoints, правильно передавая аутентификационные данные.
+
+
 Если вы убрали `credentials` из параметров метода в интерфейсе, передавать их нужно через **HTTP-заголовки**. Вот как это правильно реализовать:
 
 ---
