@@ -1,458 +1,314 @@
-private void FilterParameterSections(DeviceDescription description)
-        {
-            foreach (var device in description.Device)
-            {
-                foreach (var con in device.Connector)
-                {
-                    if (con.HostParameterSet != null)
-                    {
-                        var filteredItems = new List<_DeviceDescriptionNode>();
+Понял, игнорируем предыдущие обсуждения про `ParameterType` и `ParameterSectionType`. Давайте полностью пересоберем `FindToolViewModel` для нового задания - поиска по активному проекту с отображением результатов в диалоговом окне.
 
-                        foreach (var node in con.HostParameterSet)
-                        {
-                            if (node is ParameterSectionType section)
-                            {
-                                if (section.Items != null)
-                                {
-                                    filteredItems.AddRange(section.Items);
-                                }
-                            }
-                            else
-                            {
-                                filteredItems.Add(node);
-                            }
-                        }
-                        con.HostParameterSet = new DeviceDescriptionNodeCollection(null, filteredItems);
-                    }
-                }
-            }
-        }
+### Полная реализация FindToolViewModel
 
-public static class ParentHelper
-    {
-        /// <summary>
-        /// Gets the parent of the specified type.
-        /// </summary>
-        /// <typeparam name="TParent">The type of the parent.</typeparam>
-        /// <param name="child">The child model.</param>
-        /// <param name="maxLevels">The maximum levels to search. If <c>-1</c>, the number is unlimited.</param>
-        /// <returns>The parent or <c>null</c> if the parent is not found.</returns>
-        /// <exception cref="ArgumentNullException">The <paramref name="child" /> is <c>null</c>.</exception>
-        public static TParent GetParent<TParent>(this _IDeviceDescriptionNode child, int maxLevels = -1)
-            where TParent : class
-        {
-            Argument.IsNotNull("child", child);
-
-            var parent = child._Parent;
-            while (parent != null && maxLevels-- != 0)
-            {
-                if (parent is TParent)
-                {
-                    //Parent of type TParent is found
-                    return (TParent)parent;
-                }
-
-                parent = parent._Parent;
-            }
-            return null;
-        }
-    }
-
-Чтобы исключить отображение `ParameterSectionType` в `LibraryViewModel`, сохранив при этом его в модели данных, внесем следующие изменения:
-
-### 1. Модифицируем метод `LoadLibraries` для фильтрации
-```csharp
-private async Task LoadLibraries()
-{
-    DeviceDescription platformDescription = null;
-    try
-    {
-        var files = Directory.GetFiles("libraries", "*.xml");
-        foreach (var item in files)
-        {
-            platformDescription = await Pilot.XmlHelper.DeserializeAsync<DeviceDescription>(item);
-            platformDescription._Name = Path.GetFileName(item);
-            
-            // Применяем фильтрацию перед добавлением
-            FilterParameterSections(platformDescription);
-            
-            ComponentService.ApplyComponents(platformDescription);
-            Thread.Sleep(1);
-
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                HwRoot.Add(platformDescription);
-            });
-        }
-    }
-    catch (Exception e)
-    {
-        // Обработка ошибок
-    }
-}
-```
-
-### 2. Добавляем метод фильтрации
-```csharp
-private void FilterParameterSections(DeviceDescription description)
-{
-    // Обрабатываем ParameterSet, если он есть
-    if (description.ParameterSet?.Items != null)
-    {
-        var filteredItems = new List<_DeviceDescriptionNode>();
-        
-        foreach (var node in description.ParameterSet.Items)
-        {
-            if (node is ParameterSectionType section)
-            {
-                // Добавляем только дочерние элементы секции
-                if (section.Items != null)
-                {
-                    filteredItems.AddRange(section.Items);
-                }
-            }
-            else
-            {
-                filteredItems.Add(node);
-            }
-        }
-        
-        description.ParameterSet.Items = new DeviceDescriptionNodeCollection(null, filteredItems);
-    }
-}
-```
-
-### 3. Альтернативный вариант (если нужно сохранить оригинальные данные)
-Создадим отдельную коллекцию для отображения:
-```csharp
-public ObservableCollection<_DeviceDescriptionNode> FilteredHwRoot { get; } = new();
-
-private void RefreshFilteredView()
-{
-    FilteredHwRoot.Clear();
-    foreach (var rootNode in HwRoot)
-    {
-        if (rootNode is DeviceDescription desc)
-        {
-            var filtered = new DeviceDescription
-            {
-                _Name = desc._Name,
-                Types = desc.Types,
-                ParameterSet = desc.ParameterSet != null 
-                    ? new DeviceDescriptionParameterSet 
-                    { 
-                        Items = FilterNodes(desc.ParameterSet.Items) 
-                    } 
-                    : null
-            };
-            FilteredHwRoot.Add(filtered);
-        }
-        else
-        {
-            FilteredHwRoot.Add(rootNode);
-        }
-    }
-}
-
-private DeviceDescriptionNodeCollection FilterNodes(DeviceDescriptionNodeCollection source)
-{
-    var filtered = new List<_DeviceDescriptionNode>();
-    foreach (var node in source)
-    {
-        if (node is ParameterSectionType section)
-        {
-            filtered.AddRange(section.Items ?? Enumerable.Empty<_DeviceDescriptionNode>());
-        }
-        else
-        {
-            filtered.Add(node);
-        }
-    }
-    return new DeviceDescriptionNodeCollection(null, filtered);
-}
-```
-
-### 4. Обновляем биндинги в XAML
-Замените привязку с `HwRoot` на `FilteredHwRoot`:
-```xml
-<TreeView ItemsSource="{Binding FilteredHwRoot}"/>
-```
-
-### 5. Важные нюансы:
-1. **Сохранение оригинальных данных**:
-   - Оригинальная коллекция `HwRoot` остается неизменной
-   - Фильтрация применяется только для отображения
-
-2. **Производительность**:
-   - Для больших библиотек используйте `VirtualizingStackPanel`:
-     ```xml
-     <TreeView.ItemsPanel>
-         <ItemsPanelTemplate>
-             <VirtualizingStackPanel/>
-         </ItemsPanelTemplate>
-     </TreeView.ItemsPanel>
-     ```
-
-3. **Обновление при изменениях**:
-   - Если данные динамически меняются, вызывайте `RefreshFilteredView()`
-
-4. **Совместимость с экспортом**:
-   - Метод `Export_CCodeExecute` будет работать корректно, так как использует `SelectedNode` из оригинальной модели
-
-### Полный модифицированный класс:
 ```csharp
 [Export]
 [PartCreationPolicy(CreationPolicy.NonShared)]
-public class LibraryViewModel : ViewModelBase
+public class FindToolViewModel : ViewModelBase
 {
-    // Оригинальная коллекция (полные данные)
-    public ObservableCollection<_DeviceDescriptionNode> HwRoot { get; } = new();
+    private readonly Lazy<IProjectManager> _projectManager;
+    private string _searchText;
+    private bool _isBusy;
+    private bool _caseSensitive;
+    private bool _searchInNames = true;
+    private bool _searchInValues;
 
-    // Отфильтрованная коллекция (без ParameterSectionType)
-    public ObservableCollection<_DeviceDescriptionNode> FilteredHwRoot { get; } = new();
+    public ObservableCollection<SearchResult> Results { get; } = new();
+    public ICommand SearchCommand { get; }
+    public ICommand OpenResultCommand { get; }
 
     [ImportingConstructor]
-    public LibraryViewModel()
+    public FindToolViewModel(Lazy<IProjectManager> projectManager)
     {
-        // ... инициализация команд ...
+        _projectManager = projectManager;
+        
+        SearchCommand = new RelayCommand(ExecuteSearch, CanExecuteSearch);
+        OpenResultCommand = new RelayCommand<SearchResult>(OpenSelectedResult);
     }
 
-    private async Task LoadLibraries()
+    public string SearchText
     {
-        // ... загрузка данных в HwRoot ...
-        RefreshFilteredView(); // Обновляем отфильтрованное представление
+        get => _searchText;
+        set => SetProperty(ref _searchText, value);
     }
 
-    private void RefreshFilteredView()
+    public bool IsBusy
     {
-        FilteredHwRoot.Clear();
-        foreach (var rootNode in HwRoot)
+        get => _isBusy;
+        set => SetProperty(ref _isBusy, value);
+    }
+
+    public bool CaseSensitive
+    {
+        get => _caseSensitive;
+        set => SetProperty(ref _caseSensitive, value);
+    }
+
+    public bool SearchInNames
+    {
+        get => _searchInNames;
+        set => SetProperty(ref _searchInNames, value);
+    }
+
+    public bool SearchInValues
+    {
+        get => _searchInValues;
+        set => SetProperty(ref _searchInValues, value);
+    }
+
+    private bool CanExecuteSearch()
+    {
+        return !IsBusy && 
+               !string.IsNullOrWhiteSpace(SearchText) && 
+               _projectManager.Value.ActiveProject != null;
+    }
+
+    private async void ExecuteSearch()
+    {
+        IsBusy = true;
+        Results.Clear();
+
+        try
         {
-            if (rootNode is DeviceDescription desc)
+            await Task.Run(() =>
             {
-                var filtered = new DeviceDescription
-                {
-                    _Name = desc._Name,
-                    Types = desc.Types,
-                    ParameterSet = desc.ParameterSet != null 
-                        ? new DeviceDescriptionParameterSet 
-                        { 
-                            Items = FilterNodes(desc.ParameterSet.Items) 
-                        } 
-                        : null
-                };
-                FilteredHwRoot.Add(filtered);
+                var project = _projectManager.Value.ActiveProject;
+                if (project == null) return;
+
+                var comparison = CaseSensitive 
+                    ? StringComparison.Ordinal 
+                    : StringComparison.OrdinalIgnoreCase;
+
+                SearchInProject(project, comparison);
+            });
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void SearchInProject(Project project, StringComparison comparison)
+    {
+        // Поиск по узлам проекта
+        foreach (var node in project.Nodes)
+        {
+            if (node is IProjectItem item)
+            {
+                CheckAndAddResult(item, comparison);
             }
-            else
+
+            if (node is IProjectContainer container)
             {
-                FilteredHwRoot.Add(rootNode);
+                SearchInContainer(container, comparison);
             }
         }
     }
 
-    // ... остальные методы без изменений ...
+    private void SearchInContainer(IProjectContainer container, StringComparison comparison)
+    {
+        foreach (var child in container.Children)
+        {
+            if (child is IProjectItem item)
+            {
+                CheckAndAddResult(item, comparison);
+            }
+
+            if (child is IProjectContainer childContainer)
+            {
+                SearchInContainer(childContainer, comparison);
+            }
+        }
+    }
+
+    private void CheckAndAddResult(IProjectItem item, StringComparison comparison)
+    {
+        var matches = new List<string>();
+
+        if (SearchInNames && Matches(item.Name, comparison))
+        {
+            matches.Add("Name");
+        }
+
+        if (SearchInValues && item is IValueItem valueItem && 
+            Matches(valueItem.Value?.ToString(), comparison))
+        {
+            matches.Add("Value");
+        }
+
+        if (matches.Count > 0)
+        {
+            var result = new SearchResult
+            {
+                Item = item,
+                Name = item.Name,
+                Path = GetItemPath(item),
+                MatchFields = string.Join(", ", matches),
+                MatchScore = CalculateMatchScore(item, matches.Contains("Name"), matches.Contains("Value"))
+            };
+
+            Application.Current.Dispatcher.Invoke(() => Results.Add(result));
+        }
+    }
+
+    private bool Matches(string text, StringComparison comparison)
+    {
+        return !string.IsNullOrEmpty(text) && 
+               text.Contains(SearchText, comparison);
+    }
+
+    private string GetItemPath(IProjectItem item)
+    {
+        var path = new List<string>();
+        var current = item.Parent;
+
+        while (current != null)
+        {
+            path.Insert(0, current.Name);
+            current = current.Parent;
+        }
+
+        return string.Join("/", path);
+    }
+
+    private double CalculateMatchScore(IProjectItem item, bool nameMatch, bool valueMatch)
+    {
+        // Простая логика расчета релевантности
+        double score = 0;
+        if (nameMatch) score += 0.7;
+        if (valueMatch) score += 0.3;
+        return score;
+    }
+
+    private void OpenSelectedResult(SearchResult result)
+    {
+        if (result?.Item != null)
+        {
+            _projectManager.Value.SelectItem(result.Item);
+        }
+    }
+}
+
+public class SearchResult
+{
+    public IProjectItem Item { get; set; }
+    public string Name { get; set; }
+    public string Path { get; set; }
+    public string MatchFields { get; set; }
+    public double MatchScore { get; set; }
 }
 ```
 
-Эти изменения:
-1. Сохранят `ParameterSectionType` в исходных данных
-2. Исключат его из отображения
-3. Не повлияют на функциональность экспорта/импорта
-4. Поддержат правильную вложенность элементов
-5.
-6. using Pilot.HwTool.Core;
-using Pilot.HwTool.Mvvm;
-using Pilot.HwTool.Mvvm.Helpers;
-using Pilot.TargetPlatform;
-using System;
-using System.Collections.ObjectModel;
-using System.ComponentModel.Composition;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Input;
+### Соответствующий XAML (FindToolView.xaml)
 
-namespace Pilot.HwTool
+```xml
+<controls:MetroWindow x:Class="FindToolView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="http://metro.mahapps.com/winfx/xaml/controls"
+        Title="Project Search" 
+        Height="600" Width="800"
+        GlowBrush="{DynamicResource AccentColorBrush}">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Search Panel -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal">
+            <TextBox controls:TextBoxHelper.Watermark="Search text..."
+                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                     Width="300" 
+                     Margin="0,0,10,0"/>
+            <Button Content="Search" 
+                    Command="{Binding SearchCommand}" 
+                    Width="80"/>
+            <CheckBox Content="Case sensitive" 
+                      IsChecked="{Binding CaseSensitive}" 
+                      Margin="10,0,0,0"
+                      VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- Filters -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10">
+            <CheckBox Content="Search in names" 
+                      IsChecked="{Binding SearchInNames}" 
+                      Margin="0,0,10,0"/>
+            <CheckBox Content="Search in values" 
+                      IsChecked="{Binding SearchInValues}"/>
+        </StackPanel>
+
+        <!-- Results -->
+        <DataGrid Grid.Row="2" 
+                 ItemsSource="{Binding Results}" 
+                 AutoGenerateColumns="False"
+                 SelectionMode="Single"
+                 IsReadOnly="True">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Name" 
+                                   Binding="{Binding Name}" 
+                                   Width="200"/>
+                <DataGridTextColumn Header="Path" 
+                                   Binding="{Binding Path}" 
+                                   Width="300"/>
+                <DataGridTextColumn Header="Found in" 
+                                   Binding="{Binding MatchFields}" 
+                                   Width="150"/>
+                <DataGridTextColumn Header="Relevance" 
+                                   Binding="{Binding MatchScore, StringFormat={}{0:P0}}" 
+                                   Width="80"/>
+                <DataGridTemplateColumn Width="80">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="Open" 
+                                    Command="{Binding Path=DataContext.OpenResultCommand, 
+                                              RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                    CommandParameter="{Binding}"
+                                    Style="{StaticResource AccentedButtonStyle}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</controls:MetroWindow>
+```
+
+### Ключевые особенности:
+
+1. **Гибкий поиск**:
+   - Поддержка поиска по именам и значениям
+   - Учет регистра
+   - Рекурсивный обход всей структуры проекта
+
+2. **Информативные результаты**:
+   - Отображение пути к объекту
+   - Показатель релевантности
+   - Указание, где найдено совпадение
+
+3. **Интеграция**:
+   - Навигация к найденным элементам через ProjectManager
+   - Поддержка MVVM через инъекцию зависимостей
+
+4. **Производительность**:
+   - Асинхронное выполнение поиска
+   - Постепенное добавление результатов
+
+5. **UI-фичи**:
+   - Водяной знак в поле поиска
+   - Стилизованные кнопки
+   - Сортировка по колонкам
+
+Для использования просто вызовите окно из главного ViewModel:
+
+```csharp
+public ICommand ShowFindToolCommand => new RelayCommand(() =>
 {
-    [Export]
-    [PartCreationPolicy(CreationPolicy.NonShared)]
-    public class LibraryViewModel : Mvvm.ViewModelBase
-    {
-        private _DeviceDescriptionNode selectedNode;
-
-        [ImportingConstructor]
-        public LibraryViewModel()
-        {
-            HwRoot = new ObservableCollection<_DeviceDescriptionNode>();
-
-            Import_StateBitsCommand = new RelayCommand(Import_StateBitsExecute);
-            Import_LibSensorOutCommand = new RelayCommand(Import_LibSensorOutExecute);
-            Module_AnalogInputCommand = new RelayCommand(Module_AnalogInputExecute);
-            Export_CCodeCommand = new RelayCommand(Export_CCodeExecute, Export_CCodeCanExecute);
-        }
-
-        public ObservableCollection<_DeviceDescriptionNode> HwRoot { get; set; }
-
-        public _DeviceDescriptionNode SelectedNode
-        {
-            get => selectedNode;
-            set
-            {
-                selectedNode = value;
-                RaisePropertyChanged();
-            }
-        }
-
-        #region Import/Export
-
-        public ICommand Import_StateBitsCommand { get; set; }
-        public ICommand Import_LibSensorOutCommand { get; set; }
-        public ICommand Module_AnalogInputCommand { get; set; }
-        public ICommand Export_CCodeCommand { get; set; }
-
-        private void Import_StateBitsExecute()
-        {
-            var text = Clipboard.GetText();
-            if (!string.IsNullOrEmpty(text))
-            {
-                try
-                {
-                    var types = LzgConv.Import_xxxStateBits(text);
-                    DeviceDescription dd = new DeviceDescription()
-                    {
-                        Types = new DeviceDescriptionTypes()
-                        {
-                            Items = new DeviceDescriptionNodeCollection(null, types),
-                            //ItemsElementName = new ItemsChoiceType[] { },
-                            //ItemsElementName = new[] { ItemsChoiceType.ArrayType, ItemsChoiceType.BitfieldType, ItemsChoiceType.EnumType, ItemsChoiceType.RangeType, ItemsChoiceType.StructType, ItemsChoiceType.UnionType },
-                        }
-                    };
-                    var xmlstr = XmlHelper.Serialize2Str(dd);
-                    Clipboard.SetText(xmlstr);
-                    System.Media.SystemSounds.Asterisk.Play();
-                }
-                catch (Exception ex)
-                {
-                    Clipboard.Clear();
-                    System.Media.SystemSounds.Exclamation.Play();
-                }
-            }
-        }
-
-        private void Import_LibSensorOutExecute()
-        {
-            var text = Clipboard.GetText();
-            if (!string.IsNullOrEmpty(text))
-            {
-                try
-                {
-                    var typeList = LzgConv.Import_LibSensorOut_as_Range(text);
-                    /*var paramSectList = LzgConv.Import_LibSensorOut_as_Param(text);*/
-                    DeviceDescription dd = new DeviceDescription()
-                    {
-                        Types = new DeviceDescriptionTypes()
-                        {
-                            Items = new DeviceDescriptionNodeCollection(null, typeList),
-                        },
-                   /*     ParameterSet = new DeviceDescriptionParameterSet
-                        {
-                            Items = new DeviceDescriptionNodeCollection(null, paramSectList),
-                        }*/
-                    };
-                    var xmlstr = XmlHelper.Serialize2Str(dd);
-                    Clipboard.SetText(xmlstr);
-                    System.Media.SystemSounds.Asterisk.Play();
-                }
-                catch (Exception ex)
-                {
-                    Clipboard.Clear();
-                    System.Media.SystemSounds.Exclamation.Play();
-                }
-            }
-        }
-
-        private void Module_AnalogInputExecute()
-        {
-            var text = Clipboard.GetText();
-            if (!string.IsNullOrEmpty(text))
-            {
-                try
-                {
-                    var ddd = LzgConv.Import_Module_AnalogInput(text);
-                    DeviceDescription dd = new DeviceDescription()
-                    {
-                        Device = new DeviceDescriptionDeviceCollection(null, ddd),
-                    };
-                    var xmlstr = XmlHelper.Serialize2Str(dd);
-                    Clipboard.SetText(xmlstr);
-                    System.Media.SystemSounds.Asterisk.Play();
-                }
-                catch (Exception ex)
-                {
-                    Clipboard.Clear();
-                    System.Media.SystemSounds.Exclamation.Play();
-                }
-            }
-        }
-
-        private bool Export_CCodeCanExecute()
-        {
-            return SelectedNode is DeviceDescription;// || SelectedNode is DeviceDescriptionDevice;
-        }
-
-        private void Export_CCodeExecute()
-        {
-            if (SelectedNode is DeviceDescription devdesc)
-            {
-                try
-                {
-                    var cstr = new CTarget(devdesc).Export_CCode();
-                    Clipboard.SetText(cstr);
-                    System.Media.SystemSounds.Asterisk.Play();
-                }
-                catch (Exception ex)
-                {
-                    Clipboard.Clear();
-                    System.Media.SystemSounds.Exclamation.Play();
-                }
-            }
-        }
-
-        #endregion
-
-        public override async void Initialize()
-        {
-            await LoadLibraries();
-        }
-
-        private async Task LoadLibraries()
-        {
-            DeviceDescription platformDescription = null;
-            try
-            {
-                var files = Directory.GetFiles("libraries", "*.xml");
-                foreach (var item in files)
-                {
-                    platformDescription = await Pilot.XmlHelper.DeserializeAsync<DeviceDescription>(item);
-                    //platformDescription.ProjPath = Path.GetFullPath(item);
-                    platformDescription._Name = Path.GetFileName(item);
-
-                    
-                    ComponentService.ApplyComponents(platformDescription);
-
-                    Thread.Sleep(1);
-
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        HwRoot.Add(platformDescription);
-                    });
-                }
-            }
-            catch (Exception e)
-            {
-
-            }
-        }
-    }
-}
+    var findTool = ServiceLocator.GetInstance<FindToolViewModel>();
+    var window = new FindToolView { DataContext = findTool };
+    window.ShowDialog();
+});
+```
