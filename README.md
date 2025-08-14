@@ -1,3 +1,147 @@
+<catel:DataWindow x:Class="Module.Updater.Dialogs.UpdateDialogView"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:catel="http://catel.codeplex.com"
+                  xmlns:dialogs="clr-namespace:Module.Updater.Dialogs"
+                  xmlns:properties="clr-namespace:Module.Updater.Properties"
+                  xmlns:kivi="http://kivi.dev.ekra.ru"
+                  xmlns:pilot="http://pilot.dev.ekra.ru"
+                  Icon="/Module.Updater;component/Resources/Images/application_update.png" 
+                  Height="400" Width="600"
+                  kivi:CommandBindings.CommandBindings="{Binding CommandBindings}">
+
+    <catel:DataWindow.Resources>
+        <ResourceDictionary>
+            <!--<ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/Catel.MVVM;component/themes/generic.xaml" />
+            </ResourceDictionary.MergedDictionaries>-->
+
+            <BooleanToVisibilityConverter x:Key="bool2vis"/>
+            <kivi:NegatedBooleanToVisibilityConverter x:Key="notbool2vis"/>
+            <dialogs:NegateBooleanConverter x:Key="negatebool"/>
+            <dialogs:UpdateStateConverter x:Key="state2vis"/>
+            <dialogs:UpdateState2EnableConverter x:Key="state2ena"/>
+            <pilot:LocalizableStringConverter x:Key="LocalizableStringConverter" ResourceManager="{x:Static properties:Resources.ResourceManager}"/>
+
+        </ResourceDictionary>
+    </catel:DataWindow.Resources>
+
+    <Grid Margin="6">
+        <DockPanel LastChildFill="True">
+            <Grid DockPanel.Dock="Top">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{x:Static properties:Resources.Check_for_update_interval_}" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" SelectedItem="{Binding Interval}" ItemsSource="{Binding Intervals}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Path=., Mode=OneWay, Converter={StaticResource LocalizableStringConverter}}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <!--<CheckBox Grid.Column="2" IsChecked="{Binding HasUpdate}"/>-->
+                <Button Grid.Column="3" Command="{Binding CheckForUpdatesCommand}" Content="{x:Static properties:Resources.Check_For_Updates}"
+                        IsEnabled="{Binding State, Converter={StaticResource state2ena}}">
+                </Button>
+            </Grid>
+            <Grid DockPanel.Dock="Bottom">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <CheckBox Grid.Column="0" IsChecked="{Binding IgnoreRevision}" Margin="10,0" VerticalAlignment="Center"
+                          Content="{x:Static properties:Resources.IgnoreRevNum}">
+                    <CheckBox.ToolTip>
+                        <TextBlock Text="{x:Static properties:Resources.IgnoreRevNumTip}" MaxWidth="300" TextWrapping="Wrap"/>
+                    </CheckBox.ToolTip>
+                </CheckBox>
+            </Grid>
+          <Grid Margin="0,10">
+            <Grid Visibility="{Binding State, Converter={StaticResource state2vis}, ConverterParameter={x:Static dialogs:UpdateState.Busy}}">
+                <TextBlock Text="{x:Static properties:Resources.Wait_}"/>
+            </Grid>
+            <Grid Visibility="{Binding State, Converter={StaticResource state2vis}, ConverterParameter={x:Static dialogs:UpdateState.NotAvailable}}">
+                <TextBlock Text="{x:Static properties:Resources.No_updates_available}"/>
+            </Grid>
+            <Grid Visibility="{Binding State, Converter={StaticResource state2vis}, ConverterParameter={x:Static dialogs:UpdateState.ConnectionError}}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition/>
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <Image Source="/Module.Updater;component/Resources/Images/error.png" Width="16" Margin="0,0,3,0"/>
+                    <TextBlock Text="{x:Static properties:Resources.Connection_error_}" Grid.Column="1"/>
+                </Grid>
+                <Label Grid.Row="1">
+                    <Hyperlink Command="{x:Static NavigationCommands.GoToPage}">
+                        <Run Text="{x:Static properties:Resources.Click_to_open_web_site}" ToolTip="{x:Static properties:Resources.Click_to_open_web_site}"/>
+                    </Hyperlink>
+                    <Label.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Command="{x:Static ApplicationCommands.Copy}" Icon="/Module.Updater;component/Resources/Images/page_copy.png"/>
+                        </ContextMenu>
+                    </Label.ContextMenu>
+                </Label>
+            </Grid>
+            <Grid Visibility="{Binding State, Converter={StaticResource state2vis}, ConverterParameter={x:Static dialogs:UpdateState.Available}}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Text="{x:Static properties:Resources.New_version_available}" FontWeight="Bold"/>
+                <!--<TextBlock Grid.Row="1" Text="{Binding Local, StringFormat={x:Static properties:Resources.LocalVerFormat}}"/>-->
+                <TextBlock Grid.Row="2" Text="{Binding Remote, StringFormat={x:Static properties:Resources.RemoteVerFormat}}"/>
+                <!--<TextBlock Grid.Row="3" Text="Update?"/>-->
+                <Grid Grid.Row="3" Margin="0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition/>
+                        <!--<ColumnDefinition Width="Auto"/>-->
+                    </Grid.ColumnDefinitions>
+                    <Image Source="/Module.Updater;component/Resources/Images/error.png" Width="16" Margin="0,0,3,0"/>
+                    <TextBlock Grid.Column="1">
+                        <Run Text="{x:Static properties:Resources.Manual_update_offer}"></Run>
+                        <Hyperlink Command="{x:Static NavigationCommands.GoToPage}">
+                            <Hyperlink.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Command="{x:Static ApplicationCommands.Copy}" Icon="/Module.Updater;component/Resources/Images/page_copy.png"/>
+                                </ContextMenu>
+                            </Hyperlink.ContextMenu>
+                            <Run Text="{x:Static properties:Resources.Visit_us}" ToolTip="{x:Static properties:Resources.Click_to_open_folder}"/>
+                        </Hyperlink>
+                        <Run>.</Run>
+                    </TextBlock>
+                    <!--<Button Grid.Column="2" Command="{Binding DownloadUpdatesCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <Image Source="/Module.Updater;component/Resources/Images/download.png" Width="16" Margin="0,0,3,0"/>
+                            <TextBlock Text="{x:Static properties:Resources.Download}"/>
+                        </StackPanel>
+                    </Button>-->
+                </Grid>
+                <TextBlock Grid.Row="4" Text="{x:Static properties:Resources.Changelog_}" FontWeight="Bold"/>
+                <kivi:MarkdownBox Grid.Row="5" Source="{Binding Notes}" IsReadOnly="True" BorderThickness="0" ZoomBarVisibility="Collapsed"/>
+            </Grid>
+          </Grid>
+        </DockPanel>
+    </Grid>
+</catel:DataWindow>
+
+
+
 using System;
 using System.IO;
 using System.Reflection;
