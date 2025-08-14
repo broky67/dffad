@@ -1,3 +1,151 @@
+Вот модифицированный код на русском для обработки JSON и отображения информации о новой версии:
+
+```csharp
+private static void BwOnDoWork(object sender, DoWorkEventArgs e)
+{
+    var bw = (BackgroundWorker)sender;
+    bw.DoWork -= BwOnDoWork;
+
+    CheckForUpdatesResult res = null;
+    var config = ConfigurationManager.GetSection("updater") as UpdaterConfigSection;
+    if (config != null)
+    {
+        var appInfo = GetAppFileInfo();
+        var appVer = new Version(appInfo.FileMajorPart, appInfo.FileMinorPart, 
+                               appInfo.FileBuildPart, appInfo.ProductPrivatePart);
+        
+        foreach (UpdaterElement element in config.Elements)
+        {
+            try
+            {
+                var baseUri = new Uri(element.Url);
+                Log.Debug("Отправка запроса по адресу '{0}'", baseUri);
+
+                // Создаем HTTP-клиент
+                using (var client = new WebClient())
+                {
+                    // Загружаем JSON
+                    var json = client.DownloadString(baseUri);
+                    
+                    // Преобразуем JSON в объект
+                    var updateInfo = JsonConvert.DeserializeObject<UpdateInfo>(json);
+                    
+                    // Проверяем наличие ошибок
+                    if (updateInfo.error != "OK")
+                    {
+                        Log.Error("Ошибка при проверке обновлений: " + updateInfo.error);
+                        res = new CheckForUpdatesResult { State = UpdateState.ConnectionError };
+                        continue;
+                    }
+
+                    // Парсим версию из ответа
+                    var remoteVersion = Version.Parse(updateInfo.version);
+                    
+                    // Сравниваем версии
+                    bool isNewVersionAvailable = remoteVersion > appVer || 
+                        (_ignoreRevision && new Version(remoteVersion.Major, remoteVersion.Minor, remoteVersion.Build) > 
+                        new Version(appVer.Major, appVer.Minor, appVer.Build));
+                    
+                    if (isNewVersionAvailable)
+                    {
+                        res = new CheckForUpdatesResult
+                        {
+                            State = UpdateState.Available,
+                            RemoteVersion = remoteVersion,
+                            ReleaseDate = DateTime.Parse(updateInfo.released),
+                            Notes = updateInfo.description,
+                            DownloadUrl = new Uri(new Uri(baseUri.GetLeftPart(UriPartial.Authority)), updateInfo.url)
+                        };
+                    }
+                    else
+                    {
+                        res = new CheckForUpdatesResult { State = UpdateState.NotAvailable };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Ошибка при проверке обновлений", ex);
+                res = new CheckForUpdatesResult { State = UpdateState.ConnectionError };
+            }
+        }
+    }
+
+    e.Result = res ?? new CheckForUpdatesResult { State = UpdateState.ConnectionError };
+}
+
+// Класс для десериализации JSON
+public class UpdateInfo
+{
+    public string product { get; set; }       // Название продукта
+    public string version { get; set; }       // Версия (например "1.2.0.7719")
+    public string released { get; set; }      // Дата выпуска ("2024-04-09 13:16:00")
+    public string description { get; set; }   // Описание изменений
+    public string url { get; set; }           // URL для скачивания
+    public string Theme { get; set; }         // Тема
+    public string Section { get; set; }       // Раздел
+    public string error { get; set; }         // Статус ошибки ("OK" если успешно)
+}
+```
+
+### Что изменилось:
+
+1. **Обработка JSON**:
+   - Добавлен класс `UpdateInfo` для десериализации JSON-ответа
+   - Используется `JsonConvert.DeserializeObject` для преобразования JSON в объект
+
+2. **Сравнение версий**:
+   - Версия парсится из строки `version` (например "1.2.0.7719")
+   - Учитывается настройка `IgnoreRevision` для сравнения без учета ревизии
+
+3. **Формирование результата**:
+   - При наличии новой версии заполняются:
+     - Номер версии (`RemoteVersion`)
+     - Дата выпуска (`ReleaseDate`)
+     - Список изменений (`Notes`)
+     - Ссылка для скачивания (`DownloadUrl`)
+
+4. **Отображение в интерфейсе**:
+   - Ваш XAML уже содержит привязки к этим свойствам
+   - Версия отображается через `{Binding Remote}`
+   - Список изменений через `{Binding Notes}` в MarkdownBox
+   - Ссылка для скачивания через Hyperlink
+
+### Доработки в ViewModel:
+
+Добавьте в ваш `UpdateDialogViewModel` следующие свойства:
+
+```csharp
+public Version Remote { get; private set; }
+public DateTime Released { get; private set; }
+public string Notes { get; private set; }
+public Uri DownloadUri { get; private set; }
+
+// Метод для обработки результата проверки
+private void ProcessUpdateResult(CheckForUpdatesResult result)
+{
+    State = result.State;
+    
+    if (result.State == UpdateState.Available)
+    {
+        Remote = result.RemoteVersion;
+        Released = result.ReleaseDate;
+        Notes = result.Notes;
+        DownloadUri = result.DownloadUrl;
+        
+        // Можно добавить логирование
+        Logger.Info($"Доступна новая версия: {Remote} от {Released:d}");
+    }
+}
+```
+
+Теперь ваше приложение будет:
+1. Получать данные о версиях в JSON-формате
+2. Корректно парсить и сравнивать версии
+3. Отображать всю информацию о новой версии в диалоговом окне
+4. Показывать список изменений в удобном формате
+
+Для работы кода нужно добавить NuGet пакет Newtonsoft.Json и настроить обработку ошибок подключения.
 <catel:DataWindow x:Class="Module.Updater.Dialogs.UpdateDialogView"
                   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
