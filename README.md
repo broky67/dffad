@@ -1,3 +1,107 @@
+    public class CheckForUpdateClient : ClientBase<ICheckForUpdateApi>, ICheckForUpdateApi
+    {
+        public CheckForUpdateClient(string address)
+            : base(new WebHttpBinding() { MaxReceivedMessageSize = int.MaxValue }, new EndpointAddress(address))
+        {
+            if (this.Endpoint.ListenUri.Scheme == "https")
+            {
+                // configure SSL
+                var binding = (WebHttpBinding)this.Endpoint.Binding;
+                binding.Security.Mode = WebHttpSecurityMode.Transport;
+            }
+
+            this.Endpoint.Behaviors.Add(new WebHttpBehavior());
+        }
+
+        public VersionDetails GetVersion(string uid, string ver, NetworkCredential credentials, string lang = "ru")
+        {
+            using (new OperationContextScope(this.InnerChannel))
+            {
+                var test = base.Channel.GetVersion(uid, ver, credentials, lang);
+                return test;
+            }
+        }
+
+        private static void BwOnDoWork(object sender, DoWorkEventArgs e)
+        {
+            var bw = (BackgroundWorker)sender;
+            bw.DoWork -= BwOnDoWork;
+
+            CheckForUpdatesResult res = null;
+            var config = ConfigurationManager.GetSection("updater") as UpdaterConfigSection;
+            if (config != null)
+            {
+                var appInfo = GetAppFileInfo();
+                var appVer = new Version(appInfo.FileMajorPart, appInfo.FileMinorPart, appInfo.FileBuildPart, appInfo.ProductPrivatePart);
+                foreach (UpdaterElement element in config.Elements)
+                {
+                    var baseUri = new Uri(element.Url);
+
+                    Log.Debug("Send request to '{0}'", baseUri);
+
+                    RequestMessage req = new RequestMessage
+                    {
+                        Product = appInfo.ProductName,
+                        User = System.Environment.UserName,
+                        Data = new RequestMessageData
+                        {
+                            Name = System.Environment.MachineName,
+                            User = System.Environment.UserName,
+                            OS = System.Environment.OSVersion.ToString(),
+                            Is64Bit = System.Environment.Is64BitOperatingSystem,
+                            UpdateInterval = _intervalKind.ToString(),
+                            Credential = new NetworkCredential(
+                                userName: "ekra",
+                                password: "test")
+                        },
+                    };
+
+                    VersionDetails resp = null;
+
+                    var credential = new NetworkCredential(
+                                userName: "",
+                                password: "");
+                    try
+                    {
+                        var appKey = LicenseHandler.GenerateUID("UnifiedPilotApp").ToLower(); //TODO: remove hard reference
+                        ICheckForUpdateApi webClient = new CheckForUpdateClient(baseUri.ToString());
+                        resp = webClient.GetVersion(appKey, ver: appVer.ToString(), credential, lang: "ru");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Info(ex.Message);
+                    }
+
+                    if (resp != null && resp.ErrorMsg == "OK")
+                    {
+                        Log.Debug("Received valid response. Latest version: {0}", resp.Version);
+
+                        Version newest;
+                        if (!Version.TryParse(resp.Version, out newest))
+                            newest = new Version();
+
+                        res = new CheckForUpdatesResult(true)
+                        {
+                            RemoteVer = newest,
+                            RemoteMajor = newest.Major,
+                            RemoteMinor = newest.Minor,
+                            RemoteBuild = newest.Build,
+                            RemoteRevision = newest.Revision,
+                            RemoteDate = resp.Released,
+                            RemoteNotes = resp.Description,
+                            RemoteUrl = resp.Url,
+                        };
+                        break;
+                    }
+                    else
+                    {
+                        Log.Debug("Received invalid response!");
+                    }
+                }
+            }
+            e.Result = res;
+        }
+
 Вот модифицированный код на русском для обработки JSON и отображения информации о новой версии:
 
 private static void BwOnDoWork(object sender, DoWorkEventArgs e)
