@@ -465,6 +465,489 @@ private void ProcessUpdateResult(CheckForUpdatesResult result)
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Hei
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    {"Операция \"GetVersion\" в контракте \"ICheckForUpdateApi\" использует GET, но также содержит параметр текста сообщения \"credentials\". Операции GET не могут содержать текст сообщения. Либо измените параметр \"credentials\" на параметр UriTemplate, либо перейдите с WebGetAttribute на WebInvokeAttribute."}
+
+Понял ситуацию. У вас есть 407 ошибка (требуется аутентификация прокси), и вы пытаетесь добавить NetworkCredentials. Давайте разберёмся, как правильно настроить аутентификацию для вашего `CheckForUpdateClient`.
+
+### Решение для 407 ошибки (Proxy Authentication Required)
+
+1. **Проверка текущего кода**:
+   Вы правильно добавляете NetworkCredentials, но есть несколько моментов, которые нужно проверить:
+
+```csharp
+var credential = new NetworkCredential(
+    userName: "ekra", 
+    password: "test");
+```
+
+2. **Модификация клиента**:
+   Нужно модифицировать `CheckForUpdateClient` для правильной обработки аутентификации:
+
+```csharp
+public class CheckForUpdateClient : ClientBase<ICheckForUpdateApi>, ICheckForUpdateApi
+{
+    public CheckForUpdateClient(string address, NetworkCredential credentials)
+        : base(new WebHttpBinding() { 
+            MaxReceivedMessageSize = int.MaxValue,
+            Security = new WebHttpSecurity {
+                Mode = WebHttpSecurityMode.TransportCredentialOnly,
+                Transport = new HttpTransportSecurity {
+                    ClientCredentialType = HttpClientCredentialType.Basic,
+                    ProxyCredentialType = HttpProxyCredentialType.Basic
+                }
+            }
+        }, new EndpointAddress(address))
+    {
+        this.Endpoint.Behaviors.Add(new WebHttpBehavior());
+        
+        // Устанавливаем credentials
+        this.ClientCredentials.UserName.UserName = credentials.UserName;
+        this.ClientCredentials.UserName.Password = credentials.Password;
+        
+        // Для прокси-аутентификации
+        if (WebRequest.DefaultWebProxy != null)
+        {
+            WebRequest.DefaultWebProxy.Credentials = credentials;
+        }
+    }
+
+    // ... остальные методы
+}
+```
+
+3. **Использование клиента с аутентификацией**:
+   В методе `BwOnDoWork`:
+
+```csharp
+try
+{
+    var appKey = LicenseHandler.GenerateUID("UnifiedPilotApp").ToLower();
+    var credentials = new NetworkCredential("ekra", "test");
+    ICheckForUpdateApi webClient = new CheckForUpdateClient(baseUri.ToString(), credentials);
+    resp = webClient.GetVersion(appKey, ver: appVer.ToString(), credentials, lang: "ru");
+}
+```
+
+### Дополнительные проверки:
+
+1. **Проверьте тип аутентификации**:
+   - Basic
+   - NTLM
+   - Digest
+   - Negotiate
+
+   Возможно, нужно изменить `HttpClientCredentialType`:
+
+```csharp
+ClientCredentialType = HttpClientCredentialType.Ntlm // или другой тип
+```
+
+2. **Логирование трафика** (для отладки):
+   Добавьте в конфигурацию:
+
+```xml
+<system.diagnostics>
+    <sources>
+        <source name="System.ServiceModel" switchValue="Information, ActivityTracing">
+            <listeners>
+                <add name="traceListener" 
+                     type="System.Diagnostics.XmlWriterTraceListener" 
+                     initializeData="WcfTrace.svclog"/>
+            </listeners>
+        </source>
+    </sources>
+</system.diagnostics>
+```
+
+3. **Проверка URL и прокси**:
+   Убедитесь, что:
+   - URL нового сайта корректный
+   - Прокси-сервер правильно настроен
+   - Учетные данные верные
+
+### Если проблема сохраняется:
+
+1. **Обход прокси** (если возможно):
+```csharp
+webClient.Proxy = GlobalProxySelection.GetEmptyWebProxy();
+```
+
+2. **Использование HttpClient** (альтернативный вариант):
+```csharp
+using (var handler = new HttpClientHandler {
+    Credentials = new NetworkCredential("ekra", "test"),
+    Proxy = WebRequest.DefaultWebProxy
+})
+using (var client = new HttpClient(handler))
+{
+    // Ваш запрос
+}
+```
+
+Попробуйте эти варианты и посмотрите, какой сработает в вашем случае. Если проблема останется, нужны более детальные данные о структуре запросов/ответов.
+
+
+public class CheckForUpdateClient : ClientBase<ICheckForUpdateApi>, ICheckForUpdateApi
+    {
+        public CheckForUpdateClient(string address)
+            : base(new WebHttpBinding() { MaxReceivedMessageSize = int.MaxValue }, new EndpointAddress(address))
+        {
+            if (this.Endpoint.ListenUri.Scheme == "https")
+            {
+                // configure SSL
+                var binding = (WebHttpBinding)this.Endpoint.Binding;
+                binding.Security.Mode = WebHttpSecurityMode.Transport;
+            }
+
+            this.Endpoint.Behaviors.Add(new WebHttpBehavior());
+        }
+
+        public VersionDetails GetVersion(string uid, string ver, NetworkCredential credentials, string lang = "ru")
+        {
+            using (new OperationContextScope(this.InnerChannel))
+            {
+                var test = base.Channel.GetVersion(uid, ver, credentials, lang);
+                return test;
+            }
+        }
+
+        private static void BwOnDoWork(object sender, DoWorkEventArgs e)
+        {
+            var bw = (BackgroundWorker)sender;
+            bw.DoWork -= BwOnDoWork;
+
+            CheckForUpdatesResult res = null;
+            var config = ConfigurationManager.GetSection("updater") as UpdaterConfigSection;
+            if (config != null)
+            {
+                var appInfo = GetAppFileInfo();
+                var appVer = new Version(appInfo.FileMajorPart, appInfo.FileMinorPart, appInfo.FileBuildPart, appInfo.ProductPrivatePart);
+                foreach (UpdaterElement element in config.Elements)
+                {
+                    var baseUri = new Uri(element.Url);
+
+                    Log.Debug("Send request to '{0}'", baseUri);
+
+                    RequestMessage req = new RequestMessage
+                    {
+                        Product = appInfo.ProductName,
+                        User = System.Environment.UserName,
+                        Data = new RequestMessageData
+                        {
+                            Name = System.Environment.MachineName,
+                            User = System.Environment.UserName,
+                            OS = System.Environment.OSVersion.ToString(),
+                            Is64Bit = System.Environment.Is64BitOperatingSystem,
+                            UpdateInterval = _intervalKind.ToString(),
+                            Credential = new NetworkCredential(
+                                userName: "ekra",
+                                password: "test")
+                        },
+                    };
+
+                    VersionDetails resp = null;
+
+                    var credential = new NetworkCredential(
+                                userName: "",
+                                password: "");
+                    try
+                    {
+                        var appKey = LicenseHandler.GenerateUID("UnifiedPilotApp").ToLower(); //TODO: remove hard reference
+                        ICheckForUpdateApi webClient = new CheckForUpdateClient(baseUri.ToString());
+                        resp = webClient.GetVersion(appKey, ver: appVer.ToString(), credential, lang: "ru");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Info(ex.Message);
+                    }
+
+                    if (resp != null && resp.ErrorMsg == "OK")
+                    {
+                        Log.Debug("Received valid response. Latest version: {0}", resp.Version);
+
+                        Version newest;
+                        if (!Version.TryParse(resp.Version, out newest))
+                            newest = new Version();
+
+                        res = new CheckForUpdatesResult(true)
+                        {
+                            RemoteVer = newest,
+                            RemoteMajor = newest.Major,
+                            RemoteMinor = newest.Minor,
+                            RemoteBuild = newest.Build,
+                            RemoteRevision = newest.Revision,
+                            RemoteDate = resp.Released,
+                            RemoteNotes = resp.Description,
+                            RemoteUrl = resp.Url,
+                        };
+                        break;
+                    }
+                    else
+                    {
+                        Log.Debug("Received invalid response!");
+                    }
+                }
+            }
+            e.Result = res;
+        }
+
+Вот модифицированный код на русском для обработки JSON и отображения информации о новой версии:
+
+private static void BwOnDoWork(object sender, DoWorkEventArgs e)
+        {
+            var bw = (BackgroundWorker)sender;
+            bw.DoWork -= BwOnDoWork;
+
+            CheckForUpdatesResult res = null;
+            var config = ConfigurationManager.GetSection("updater") as UpdaterConfigSection;
+            if (config != null)
+            {
+                var appInfo = GetAppFileInfo();
+                var appVer = new Version(appInfo.FileMajorPart, appInfo.FileMinorPart, appInfo.FileBuildPart, appInfo.ProductPrivatePart);
+                foreach (UpdaterElement element in config.Elements)
+                {
+                    var baseUri = new Uri(element.Url);
+
+                    Log.Debug("Send request to '{0}'", baseUri);
+
+                    RequestMessage req = new RequestMessage
+                    {
+                        Product = appInfo.ProductName,
+                        User = System.Environment.UserName,
+                        Data = new RequestMessageData
+                        {
+                            Name = System.Environment.MachineName,
+                            User = System.Environment.UserName,
+                            OS = System.Environment.OSVersion.ToString(),
+                            Is64Bit = System.Environment.Is64BitOperatingSystem,
+                            UpdateInterval = _intervalKind.ToString(),
+                            Credential = new NetworkCredential(
+                                userName: "ekra",
+                                password: "test")
+                        },
+                    };
+
+                    VersionDetails resp = null;
+
+                    var credential = new NetworkCredential(
+                                userName: "",
+                                password: "");
+                    try
+                    {
+                        var appKey = LicenseHandler.GenerateUID("UnifiedPilotApp").ToLower(); //TODO: remove hard reference
+                        ICheckForUpdateApi webClient = new CheckForUpdateClient(baseUri.ToString());
+                        resp = webClient.GetVersion(appKey, ver: appVer.ToString(), credential, lang: "ru");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Info(ex.Message);
+                    }
+
+                    if (resp != null && resp.ErrorMsg == "OK")
+                    {
+                        Log.Debug("Received valid response. Latest version: {0}", resp.Version);
+
+                        Version newest;
+                        if (!Version.TryParse(resp.Version, out newest))
+                            newest = new Version();
+
+                        res = new CheckForUpdatesResult(true)
+                        {
+                            RemoteVer = newest,
+                            RemoteMajor = newest.Major,
+                            RemoteMinor = newest.Minor,
+                            RemoteBuild = newest.Build,
+                            RemoteRevision = newest.Revision,
+                            RemoteDate = resp.Released,
+                            RemoteNotes = resp.Description,
+                            RemoteUrl = resp.Url,
+                        };
+                        break;
+                    }
+                    else
+                    {
+                        Log.Debug("Received invalid response!");
+                    }
+                }
+            }
+            e.Result = res;
+        }
+
+
+    public class CheckForUpdateClient : ClientBase<ICheckForUpdateApi>, ICheckForUpdateApi
+    {
+        public CheckForUpdateClient(string address)
+            : base(new WebHttpBinding() { MaxReceivedMessageSize = int.MaxValue }, new EndpointAddress(address))
+        {
+            if (this.Endpoint.ListenUri.Scheme == "https")
+            {
+                // configure SSL
+                var binding = (WebHttpBinding)this.Endpoint.Binding;
+                binding.Security.Mode = WebHttpSecurityMode.Transport;
+            }
+
+            this.Endpoint.Behaviors.Add(new WebHttpBehavior());
+        }
+
+        public VersionDetails GetVersion(string uid, string ver, NetworkCredential credentials, string lang = "ru")
+        {
+            using (new OperationContextScope(this.InnerChannel))
+            {
+                var test = base.Channel.GetVersion(uid, ver, credentials, lang);
+                return test;
+            }
+        }
+### Доработки в ViewModel:
+
+Добавьте в ваш `UpdateDialogViewModel` следующие свойства:
+
+```csharp
+public Version Remote { get; private set; }
+public DateTime Released { get; private set; }
+public string Notes { get; private set; }
+public Uri DownloadUri { get; private set; }
+
+// Метод для обработки результата проверки
+private void ProcessUpdateResult(CheckForUpdatesResult result)
+{
+    State = result.State;
+    
+    if (result.State == UpdateState.Available)
+    {
+        Remote = result.RemoteVersion;
+        Released = result.ReleaseDate;
+        Notes = result.Notes;
+        DownloadUri = result.DownloadUrl;
+        
+        // Можно добавить логирование
+        Logger.Info($"Доступна новая версия: {Remote} от {Released:d}");
+    }
+}
+```
+
+Теперь ваше приложение будет:
+1. Получать данные о версиях в JSON-формате
+2. Корректно парсить и сравнивать версии
+3. Отображать всю информацию о новой версии в диалоговом окне
+4. Показывать список изменений в удобном формате
+
+Для работы кода нужно добавить NuGet пакет Newtonsoft.Json и настроить обработку ошибок подключения.
+<catel:DataWindow x:Class="Module.Updater.Dialogs.UpdateDialogView"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:catel="http://catel.codeplex.com"
+                  xmlns:dialogs="clr-namespace:Module.Updater.Dialogs"
+                  xmlns:properties="clr-namespace:Module.Updater.Properties"
+                  xmlns:kivi="http://kivi.dev.ekra.ru"
+                  xmlns:pilot="http://pilot.dev.ekra.ru"
+                  Icon="/Module.Updater;component/Resources/Images/application_update.png" 
+                  Height="400" Width="600"
+                  kivi:CommandBindings.CommandBindings="{Binding CommandBindings}">
+
+    <catel:DataWindow.Resources>
+        <ResourceDictionary>
+            <!--<ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/Catel.MVVM;component/themes/generic.xaml" />
+            </ResourceDictionary.MergedDictionaries>-->
+
+            <BooleanToVisibilityConverter x:Key="bool2vis"/>
+            <kivi:NegatedBooleanToVisibilityConverter x:Key="notbool2vis"/>
+            <dialogs:NegateBooleanConverter x:Key="negatebool"/>
+            <dialogs:UpdateStateConverter x:Key="state2vis"/>
+            <dialogs:UpdateState2EnableConverter x:Key="state2ena"/>
+            <pilot:LocalizableStringConverter x:Key="LocalizableStringConverter" ResourceManager="{x:Static properties:Resources.ResourceManager}"/>
+
+        </ResourceDictionary>
+    </catel:DataWindow.Resources>
+
+    <Grid Margin="6">
+        <DockPanel LastChildFill="True">
+            <Grid DockPanel.Dock="Top">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{x:Static properties:Resources.Check_for_update_interval_}" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" SelectedItem="{Binding Interval}" ItemsSource="{Binding Intervals}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Path=., Mode=OneWay, Converter={StaticResource LocalizableStringConverter}}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <!--<CheckBox Grid.Column="2" IsChecked="{Binding HasUpdate}"/>-->
+                <Button Grid.Column="3" Command="{Binding CheckForUpdatesCommand}" Content="{x:Static properties:Resources.Check_For_Updates}"
+                        IsEnabled="{Binding State, Converter={StaticResource state2ena}}">
+                </Button>
+            </Grid>
+            <Grid DockPanel.Dock="Bottom">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <CheckBox Grid.Column="0" IsChecked="{Binding IgnoreRevision}" Margin="10,0" VerticalAlignment="Center"
+                          Content="{x:Static properties:Resources.IgnoreRevNum}">
+                    <CheckBox.ToolTip>
+                        <TextBlock Text="{x:Static properties:Resources.IgnoreRevNumTip}" MaxWidth="300" TextWrapping="Wrap"/>
+                    </CheckBox.ToolTip>
+                </CheckBox>
+            </Grid>
+          <Grid Margin="0,10">
+            <Grid Visibility="{Binding State, Converter={StaticResource state2vis}, ConverterParameter={x:Static dialogs:UpdateState.Busy}}">
+                <TextBlock Text="{x:Static properties:Resources.Wait_}"/>
+            </Grid>
+            <Grid Visibility="{Binding State, Converter={StaticResource state2vis}, ConverterParameter={x:Static dialogs:UpdateState.NotAvailable}}">
+                <TextBlock Text="{x:Static properties:Resources.No_updates_available}"/>
+            </Grid>
+            <Grid Visibility="{Binding State, Converter={StaticResource state2vis}, ConverterParameter={x:Static dialogs:UpdateState.ConnectionError}}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition/>
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <Image Source="/Module.Updater;component/Resources/Images/error.png" Width="16" Margin="0,0,3,0"/>
+                    <TextBlock Text="{x:Static properties:Resources.Connection_error_}" Grid.Column="1"/>
+                </Grid>
+                <Label Grid.Row="1">
+                    <Hyperlink Command="{x:Static NavigationCommands.GoToPage}">
+                        <Run Text="{x:Static properties:Resources.Click_to_open_web_site}" ToolTip="{x:Static properties:Resources.Click_to_open_web_site}"/>
+                    </Hyperlink>
+                    <Label.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Command="{x:Static ApplicationCommands.Copy}" Icon="/Module.Updater;component/Resources/Images/page_copy.png"/>
+                        </ContextMenu>
+                    </Label.ContextMenu>
+                </Label>
+            </Grid>
+            <Grid Visibility="{Binding State, Converter={StaticResource state2vis}, ConverterParameter={x:Static dialogs:UpdateState.Available}}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition/>
                 </Grid.RowDefinitions>
