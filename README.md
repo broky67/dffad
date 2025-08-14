@@ -1,4 +1,124 @@
-    public class CheckForUpdateClient : ClientBase<ICheckForUpdateApi>, ICheckForUpdateApi
+Понял ситуацию. У вас есть 407 ошибка (требуется аутентификация прокси), и вы пытаетесь добавить NetworkCredentials. Давайте разберёмся, как правильно настроить аутентификацию для вашего `CheckForUpdateClient`.
+
+### Решение для 407 ошибки (Proxy Authentication Required)
+
+1. **Проверка текущего кода**:
+   Вы правильно добавляете NetworkCredentials, но есть несколько моментов, которые нужно проверить:
+
+```csharp
+var credential = new NetworkCredential(
+    userName: "ekra", 
+    password: "test");
+```
+
+2. **Модификация клиента**:
+   Нужно модифицировать `CheckForUpdateClient` для правильной обработки аутентификации:
+
+```csharp
+public class CheckForUpdateClient : ClientBase<ICheckForUpdateApi>, ICheckForUpdateApi
+{
+    public CheckForUpdateClient(string address, NetworkCredential credentials)
+        : base(new WebHttpBinding() { 
+            MaxReceivedMessageSize = int.MaxValue,
+            Security = new WebHttpSecurity {
+                Mode = WebHttpSecurityMode.TransportCredentialOnly,
+                Transport = new HttpTransportSecurity {
+                    ClientCredentialType = HttpClientCredentialType.Basic,
+                    ProxyCredentialType = HttpProxyCredentialType.Basic
+                }
+            }
+        }, new EndpointAddress(address))
+    {
+        this.Endpoint.Behaviors.Add(new WebHttpBehavior());
+        
+        // Устанавливаем credentials
+        this.ClientCredentials.UserName.UserName = credentials.UserName;
+        this.ClientCredentials.UserName.Password = credentials.Password;
+        
+        // Для прокси-аутентификации
+        if (WebRequest.DefaultWebProxy != null)
+        {
+            WebRequest.DefaultWebProxy.Credentials = credentials;
+        }
+    }
+
+    // ... остальные методы
+}
+```
+
+3. **Использование клиента с аутентификацией**:
+   В методе `BwOnDoWork`:
+
+```csharp
+try
+{
+    var appKey = LicenseHandler.GenerateUID("UnifiedPilotApp").ToLower();
+    var credentials = new NetworkCredential("ekra", "test");
+    ICheckForUpdateApi webClient = new CheckForUpdateClient(baseUri.ToString(), credentials);
+    resp = webClient.GetVersion(appKey, ver: appVer.ToString(), credentials, lang: "ru");
+}
+```
+
+### Дополнительные проверки:
+
+1. **Проверьте тип аутентификации**:
+   - Basic
+   - NTLM
+   - Digest
+   - Negotiate
+
+   Возможно, нужно изменить `HttpClientCredentialType`:
+
+```csharp
+ClientCredentialType = HttpClientCredentialType.Ntlm // или другой тип
+```
+
+2. **Логирование трафика** (для отладки):
+   Добавьте в конфигурацию:
+
+```xml
+<system.diagnostics>
+    <sources>
+        <source name="System.ServiceModel" switchValue="Information, ActivityTracing">
+            <listeners>
+                <add name="traceListener" 
+                     type="System.Diagnostics.XmlWriterTraceListener" 
+                     initializeData="WcfTrace.svclog"/>
+            </listeners>
+        </source>
+    </sources>
+</system.diagnostics>
+```
+
+3. **Проверка URL и прокси**:
+   Убедитесь, что:
+   - URL нового сайта корректный
+   - Прокси-сервер правильно настроен
+   - Учетные данные верные
+
+### Если проблема сохраняется:
+
+1. **Обход прокси** (если возможно):
+```csharp
+webClient.Proxy = GlobalProxySelection.GetEmptyWebProxy();
+```
+
+2. **Использование HttpClient** (альтернативный вариант):
+```csharp
+using (var handler = new HttpClientHandler {
+    Credentials = new NetworkCredential("ekra", "test"),
+    Proxy = WebRequest.DefaultWebProxy
+})
+using (var client = new HttpClient(handler))
+{
+    // Ваш запрос
+}
+```
+
+Попробуйте эти варианты и посмотрите, какой сработает в вашем случае. Если проблема останется, нужны более детальные данные о структуре запросов/ответов.
+
+
+public class CheckForUpdateClient : ClientBase<ICheckForUpdateApi>, ICheckForUpdateApi
     {
         public CheckForUpdateClient(string address)
             : base(new WebHttpBinding() { MaxReceivedMessageSize = int.MaxValue }, new EndpointAddress(address))
