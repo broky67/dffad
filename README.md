@@ -1,4 +1,149 @@
-var libs = project.LibraryItems;
+Да, можно реализовать поиск без навигации. Вот максимально упрощенная версия `FindToolViewModel`, которая только ищет и отображает результаты:
+
+```csharp
+[Export]
+[PartCreationPolicy(CreationPolicy.NonShared)]
+public class FindToolViewModel : ViewModelBase
+{
+    private readonly SCLE_Project _project;
+    private string _searchText;
+    private bool _isBusy;
+
+    public ObservableCollection<SearchResult> Results { get; } = new ObservableCollection<SearchResult>();
+    public ICommand SearchCommand { get; }
+
+    public string SearchText
+    {
+        get => _searchText;
+        set { _searchText = value; OnPropertyChanged(); }
+    }
+
+    public bool IsBusy
+    {
+        get => _isBusy;
+        private set { _isBusy = value; OnPropertyChanged(); }
+    }
+
+    [ImportingConstructor]
+    public FindToolViewModel(SCLE_Project project)
+    {
+        _project = project ?? throw new ArgumentNullException(nameof(project));
+        SearchCommand = new RelayCommand(ExecuteSearch, () => !IsBusy && !string.IsNullOrWhiteSpace(SearchText));
+    }
+
+    private async void ExecuteSearch()
+    {
+        IsBusy = true;
+        Results.Clear();
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                var comparison = StringComparison.OrdinalIgnoreCase;
+                
+                // Поиск по всем областям проекта
+                SearchInCollection(_project.LibraryItems, "Библиотеки");
+                SearchInCollection(_project.DataTypeItems, "Типы данных");
+                SearchInCollection(_project.PouItems, "POU");
+                SearchInCollection(_project.FNodeTypes, "F-узлы");
+                SearchInCollection(_project.SubnetworkItems, "Подсети");
+                SearchInCollection(_project.SubstationItems, "Подстанции");
+                SearchInCollection(_project.IedItems, "IED устройства");
+
+                void SearchInCollection(IEnumerable<object> items, string category)
+                {
+                    if (items == null) return;
+
+                    foreach (var item in items)
+                    {
+                        if (item == null) continue;
+
+                        // Простейшая проверка по имени
+                        var name = item.GetType().GetProperty("Name")?.GetValue(item) as string;
+                        if (name?.Contains(SearchText, comparison) == true)
+                        {
+                            Application.Current.Dispatcher.Invoke(() => 
+                            {
+                                Results.Add(new SearchResult
+                                {
+                                    Name = name,
+                                    Category = category,
+                                    SourceObject = item
+                                });
+                            });
+                        }
+                    }
+                }
+            });
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+}
+
+public class SearchResult
+{
+    public string Name { get; set; }
+    public string Category { get; set; }
+    public object SourceObject { get; set; }
+}
+```
+
+### Ключевые упрощения:
+1. **Только поиск по имени**  
+   Проверяет только свойство `Name` у объектов
+
+2. **Нет навигации**  
+   Результаты содержат `SourceObject`, но нет команд для взаимодействия
+
+3. **Базовый UI (XAML)**:
+```xml
+<Window x:Class="FindToolView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Поиск" Height="400" Width="500">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                 Margin="0,0,0,10"/>
+        
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Results}" AutoGenerateColumns="False">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Имя" Binding="{Binding Name}" Width="200"/>
+                <DataGridTextColumn Header="Категория" Binding="{Binding Category}" Width="150"/>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</Window>
+```
+
+### Когда использовать такой вариант:
+- Для простого поиска-справки
+- Если не требуется взаимодействие с результатами
+- В демо-версиях или инструментах для аудита
+
+Такой реализации достаточно для:
+- Поиска объектов по имени
+- Отображения категории объекта
+- Сохранения ссылки на исходный объект (на случай будущего расширения)
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+- var libs = project.LibraryItems;
             var dataTypes = project.DataTypeItems;
             var pous = project.PouItems;
             var fnodes = project.FNodeTypes;
