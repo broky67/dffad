@@ -1,3 +1,119 @@
+Вот максимально упрощенная реализация поиска без категорий и навигации:
+
+```csharp
+[Export]
+[PartCreationPolicy(CreationPolicy.NonShared)]
+public class FindToolViewModel : ViewModelBase
+{
+    private readonly SCLE_Project _project;
+    private string _searchText;
+    private bool _isBusy;
+
+    public ObservableCollection<string> Results { get; } = new ObservableCollection<string>();
+    public ICommand SearchCommand { get; }
+
+    public string SearchText
+    {
+        get => _searchText;
+        set { _searchText = value; OnPropertyChanged(); }
+    }
+
+    public bool IsBusy
+    {
+        get => _isBusy;
+        private set { _isBusy = value; OnPropertyChanged(); }
+    }
+
+    [ImportingConstructor]
+    public FindToolViewModel(SCLE_Project project)
+    {
+        _project = project ?? throw new ArgumentNullException(nameof(project));
+        SearchCommand = new RelayCommand(ExecuteSearch, () => !IsBusy && !string.IsNullOrWhiteSpace(SearchText));
+    }
+
+    private async void ExecuteSearch()
+    {
+        IsBusy = true;
+        Results.Clear();
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                var comparison = StringComparison.OrdinalIgnoreCase;
+                
+                // Список всех коллекций для поиска
+                var collections = new List<IEnumerable<object>>
+                {
+                    _project.LibraryItems,
+                    _project.DataTypeItems,
+                    _project.PouItems,
+                    _project.FNodeTypes,
+                    _project.SubnetworkItems,
+                    _project.SubstationItems,
+                    _project.IedItems
+                };
+
+                foreach (var collection in collections)
+                {
+                    if (collection == null) continue;
+
+                    foreach (var item in collection)
+                    {
+                        if (item == null) continue;
+
+                        var name = item.GetType().GetProperty("Name")?.GetValue(item) as string;
+                        if (name?.Contains(SearchText, comparison) == true)
+                        {
+                            Application.Current.Dispatcher.Invoke(() => Results.Add(name));
+                        }
+                    }
+                }
+            });
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+}
+```
+
+### Соответствующий XAML:
+```xml
+<Window x:Class="FindToolView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Поиск" Height="300" Width="300">
+    <StackPanel Margin="10">
+        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                 Margin="0,0,0,10"/>
+        <Button Content="Искать" 
+                Command="{Binding SearchCommand}"
+                Margin="0,0,0,10"/>
+        <ListBox ItemsSource="{Binding Results}" 
+                 HorizontalContentAlignment="Stretch"/>
+    </StackPanel>
+</Window>
+```
+
+### Особенности:
+1. **Только имена** - отображаются только названия найденных объектов
+2. **Нет категорий** - простой плоский список результатов
+3. **Нет навигации** - просто отображение найденных имен
+4. **Минимальные зависимости** - работает только с SCLE_Project
+5. **Асинхронный поиск** - не блокирует UI
+
+Для использования:
+1. Создайте окно с этим XAML
+2. Передавайте SCLE_Project в конструктор ViewModel
+3. Результаты будут появляться в ListBox после нажатия кнопки
+
+Это минимально возможная реализация поиска по проекту без дополнительной функциональности.
+
+
+
+
 Да, можно реализовать поиск без навигации. Вот максимально упрощенная версия `FindToolViewModel`, которая только ищет и отображает результаты:
 
 ```csharp
