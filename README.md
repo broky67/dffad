@@ -1,3 +1,13 @@
+var libs = project.LibraryItems;
+            var dataTypes = project.DataTypeItems;
+            var pous = project.PouItems;
+            var fnodes = project.FNodeTypes;
+            var network = project.SubnetworkItems;
+            var substation = project.SubstationItems;
+            var scope = project.ScopeManager;
+            var iied = project.IedItems;
+            var iiecResolver = project.TypeResolver;
+
 Отлично! Переработаем код для передачи `ProjectPou` напрямую в конструктор. Вот полная реализация:
 
 ### 1. Обновленная ViewModel (`FindToolViewModel.cs`)
