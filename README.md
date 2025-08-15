@@ -1,4 +1,259 @@
-Ошибка `NullReferenceException` возникает потому что вы используете поле `_credentials`, которое нигде не инициализировано, хотя передаете `credentials` в конструктор. Давайте исправим код:
+Отлично! Переработаем код для передачи `ProjectPou` напрямую в конструктор. Вот полная реализация:
+
+### 1. Обновленная ViewModel (`FindToolViewModel.cs`)
+
+```csharp
+[Export]
+[PartCreationPolicy(CreationPolicy.NonShared)]
+public class FindToolViewModel : ViewModelBase
+{
+    private readonly ProjectPou _activeProject;
+    private string _searchText;
+    private bool _isBusy;
+    private bool _caseSensitive;
+    private bool _searchInNames = true;
+    private bool _searchInValues;
+
+    public ObservableCollection<SearchResult> Results { get; } = new();
+    public ICommand SearchCommand { get; }
+    public ICommand OpenResultCommand { get; }
+
+    [ImportingConstructor]
+    public FindToolViewModel(ProjectPou activeProject)
+    {
+        _activeProject = activeProject ?? throw new ArgumentNullException(nameof(activeProject));
+        
+        SearchCommand = new RelayCommand(ExecuteSearch, CanExecuteSearch);
+        OpenResultCommand = new RelayCommand<SearchResult>(NavigateToSelectedResult);
+    }
+
+    public string SearchText
+    {
+        get => _searchText;
+        set => SetProperty(ref _searchText, value);
+    }
+
+    public bool IsBusy
+    {
+        get => _isBusy;
+        set => SetProperty(ref _isBusy, value);
+    }
+
+    public bool CaseSensitive
+    {
+        get => _caseSensitive;
+        set => SetProperty(ref _caseSensitive, value);
+    }
+
+    public bool SearchInNames
+    {
+        get => _searchInNames;
+        set => SetProperty(ref _searchInNames, value);
+    }
+
+    public bool SearchInValues
+    {
+        get => _searchInValues;
+        set => SetProperty(ref _searchInValues, value);
+    }
+
+    private bool CanExecuteSearch()
+    {
+        return !IsBusy && !string.IsNullOrWhiteSpace(SearchText);
+    }
+
+    private async void ExecuteSearch()
+    {
+        IsBusy = true;
+        Results.Clear();
+
+        try
+        {
+            await Task.Run(() => SearchInProject(_activeProject));
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void SearchInProject(ProjectPou project)
+    {
+        var comparison = CaseSensitive 
+            ? StringComparison.Ordinal 
+            : StringComparison.OrdinalIgnoreCase;
+
+        // Поиск в корневых элементах проекта
+        foreach (var item in project.RootItems)
+        {
+            ProcessProjectItem(item, comparison);
+        }
+    }
+
+    private void ProcessProjectItem(IProjectItem item, StringComparison comparison)
+    {
+        // Проверка текущего элемента
+        CheckItemForMatch(item, comparison);
+
+        // Рекурсивный обход дочерних элементов
+        if (item is IProjectContainer container)
+        {
+            foreach (var child in container.Children)
+            {
+                ProcessProjectItem(child, comparison);
+            }
+        }
+    }
+
+    private void CheckItemForMatch(IProjectItem item, StringComparison comparison)
+    {
+        var matches = new List<string>();
+
+        if (SearchInNames && Matches(item.Name, comparison))
+        {
+            matches.Add("Name");
+        }
+
+        if (SearchInValues && item is IValueItem valueItem && 
+            Matches(valueItem.Value?.ToString(), comparison))
+        {
+            matches.Add("Value");
+        }
+
+        if (matches.Count > 0)
+        {
+            var result = new SearchResult
+            {
+                Item = item,
+                Name = item.Name,
+                Path = GetItemPath(item),
+                MatchFields = string.Join(", ", matches),
+                MatchScore = CalculateMatchScore(matches)
+            };
+
+            Application.Current.Dispatcher.Invoke(() => Results.Add(result));
+        }
+    }
+
+    private bool Matches(string text, StringComparison comparison)
+    {
+        return !string.IsNullOrEmpty(text) && 
+               text.Contains(SearchText, comparison);
+    }
+
+    private string GetItemPath(IProjectItem item)
+    {
+        var pathParts = new List<string>();
+        var current = item.Parent;
+
+        while (current != null)
+        {
+            pathParts.Insert(0, current.Name);
+            current = current.Parent;
+        }
+
+        return pathParts.Count > 0 ? string.Join("/", pathParts) : "<root>";
+    }
+
+    private double CalculateMatchScore(List<string> matches)
+    {
+        // Простая логика расчета релевантности
+        return matches.Contains("Name") ? 1.0 : 0.5;
+    }
+
+    private void NavigateToSelectedResult(SearchResult result)
+    {
+        // Реализация навигации зависит от вашей инфраструктуры
+        // Пример: использование сервиса навигации
+        NavigationService.NavigateTo(result.Item);
+    }
+}
+```
+
+### 2. Модель результата поиска (`SearchResult.cs`)
+
+```csharp
+public class SearchResult
+{
+    public IProjectItem Item { get; set; }
+    public string Name { get; set; }
+    public string Path { get; set; }
+    public string MatchFields { get; set; }
+    public double MatchScore { get; set; }
+}
+```
+
+### 3. Пример использования (открытие диалога)
+
+```csharp
+// Где-то в главной ViewModel или команде:
+public ICommand OpenFindToolCommand => new RelayCommand(() =>
+{
+    if (_activeProject == null) return;
+
+    var vm = new FindToolViewModel(_activeProject);
+    var dialog = new FindToolDialog { DataContext = vm };
+    dialog.ShowDialog();
+});
+```
+
+### Ключевые изменения:
+
+1. **Упрощенный конструктор**:
+   - Принимает только `ProjectPou`
+   - Нет зависимости от `IProjectManager`
+
+2. **Прямая работа с проектом**:
+   ```csharp
+   SearchInProject(_activeProject); // Вместо _projectManager.Value.ActiveProject
+   ```
+
+3. **Оптимизированная навигация**:
+   - Убрана зависимость от менеджера проектов
+   - Используется абстракция `IProjectItem`
+
+4. **Улучшенная обработка путей**:
+   ```csharp
+   // Было: GetItemPath через IProjectManager
+   // Стало: Локальный расчет пути
+   while (current != null) { ... }
+   ```
+
+### Особенности реализации:
+
+1. **Рекурсивный поиск**:
+   - Метод `ProcessProjectItem` вызывает сам себя для вложенных элементов
+   - Поддерживает любую глубину вложенности
+
+2. **Гибкие критерии**:
+   - Поиск по именам и/или значениям
+   - Учет регистра символов
+
+3. **Потокобезопасность**:
+   - Результаты добавляются через `Dispatcher.Invoke`
+   - Асинхронное выполнение поиска
+
+4. **Расширяемость**:
+   - Легко добавить новые критерии поиска
+   - Можно подключить дополнительные фильтры
+
+Для интеграции в ваш проект:
+1. Замените `NavigationService` на вашу реализацию навигации
+2. Настройте DI-контейнер для инжекции `ProjectPou`
+3. При необходимости адаптируйте `IProjectItem` под вашу модель данных
+
+Такой подход делает код более:
+- **Понятным** (явные зависимости)
+- **Тестируемым** (легко мокировать ProjectPou)
+- **Эффективным** (нет накладных расходов на Lazy/IProjectManager)
+-
+-
+-
+-
+-
+-
+-
+-     `NullReferenceException` возникает потому что вы используете поле `_credentials`, которое нигде не инициализировано, хотя передаете `credentials` в конструктор. Давайте исправим код:
 
 ### Исправленная реализация клиента:
 
