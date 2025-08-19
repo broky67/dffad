@@ -1,3 +1,222 @@
+Вот как разбить результаты на две колонки с отображением категории:
+
+1. Обновляем ViewModel - возвращаем SearchResult
+
+```csharp
+public class SearchResult
+{
+    public string Name { get; set; }
+    public string Category { get; set; }
+    public object SourceObject { get; set; }
+}
+
+// В методе SearchInCollection заменяем:
+Application.Current.Dispatcher.Invoke(() => 
+    Results.Add(new SearchResult
+    {
+        Name = name,
+        Category = category.DisplayName,
+        SourceObject = item
+    }));
+```
+
+2. XAML с DataGrid (рекомендуется)
+
+```xml
+<DataGrid Grid.Row="3" 
+          ItemsSource="{Binding Results}"
+          AutoGenerateColumns="False"
+          IsReadOnly="True"
+          HeadersVisibility="Column"
+          SelectionMode="Single">
+    
+    <DataGrid.Columns>
+        <DataGridTextColumn Header="Название" 
+                           Binding="{Binding Name}" 
+                           Width="*"
+                           ElementStyle="{StaticResource WrapTextStyle}"/>
+        
+        <DataGridTextColumn Header="Категория" 
+                           Binding="{Binding Category}" 
+                           Width="120"
+                           CanUserSort="True"/>
+    </DataGrid.Columns>
+    
+    <DataGrid.Style>
+        <Style TargetType="{x:Type DataGrid}">
+            <Setter Property="AlternationCount" Value="2"/>
+            <Setter Property="AlternatingRowBackground" Value="#F5F5F5"/>
+        </Style>
+    </DataGrid.Style>
+</DataGrid>
+```
+
+3. Альтернатива с ListView
+
+```xml
+<ListView Grid.Row="3" ItemsSource="{Binding Results}">
+    <ListView.View>
+        <GridView>
+            <GridViewColumn Header="Название" DisplayMemberBinding="{Binding Name}" Width="300"/>
+            <GridViewColumn Header="Категория" DisplayMemberBinding="{Binding Category}" Width="120"/>
+        </GridView>
+    </ListView.View>
+    
+    <ListView.ItemContainerStyle>
+        <Style TargetType="{x:Type ListViewItem}">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+    </ListView.ItemContainerStyle>
+</ListView>
+```
+
+4. Простой вариант с Grid
+
+```xml
+<ItemsControl Grid.Row="3" ItemsSource="{Binding Results}">
+    <ItemsControl.ItemTemplate>
+        <DataTemplate>
+            <Grid Margin="0,2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="120"/>
+                </Grid.ColumnDefinitions>
+                
+                <TextBlock Grid.Column="0" Text="{Binding Name}" TextWrapping="Wrap"/>
+                <TextBlock Grid.Column="1" Text="{Binding Category}" 
+                          Margin="10,0,0,0" Foreground="Gray"/>
+            </Grid>
+        </DataTemplate>
+    </ItemsControl.ItemTemplate>
+</ItemsControl>
+```
+
+5. Полный XAML с DataGrid (лучший вариант)
+
+```xml
+<catel:DataWindow x:Class="Module.IedExplorer.Dialogs.FindToolView"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:catel="http://catel.codeplex.com"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
+                  Height="500" Width="800" MinHeight="300" MinWidth="500">
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Панель поиска -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal">
+            <TextBox Text="{Binding SearchText}" 
+                     Width="250"
+                     Margin="0,0,10,0"/>
+            <Button Content="Поиск" 
+                    Command="{Binding SearchCommand}"
+                    Width="80"/>
+            <CheckBox Content="Учитывать регистр" 
+                      IsChecked="{Binding MatchCase}"
+                      Margin="10,0,0,0"
+                      VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- CheckComboBox для выбора категорий -->
+        <StackPanel Grid.Row="1" Margin="0,10">
+            <TextBlock Text="Категории для поиска:" Margin="0,0,0,5"/>
+            <xctk:CheckComboBox 
+                ItemsSource="{Binding AvailableCategories}"
+                DisplayMemberPath="DisplayName"
+                SelectedItemsOverride="{Binding FilteredCategories}"
+                Width="300"
+                HorizontalAlignment="Left"/>
+        </StackPanel>
+
+        <!-- Статус -->
+        <TextBlock Grid.Row="2" 
+                   Text="{Binding Results.Count, StringFormat='Найдено элементов: {0}'}"
+                   Margin="0,5" 
+                   Foreground="Gray"
+                   FontStyle="Italic"/>
+
+        <!-- Результаты в две колонки -->
+        <DataGrid Grid.Row="3" 
+                  ItemsSource="{Binding Results}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  HeadersVisibility="Column"
+                  SelectionMode="Single"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+            
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Название объекта" 
+                                   Binding="{Binding Name}" 
+                                   Width="*"
+                                   MinWidth="200"/>
+                
+                <DataGridTextColumn Header="Категория" 
+                                   Binding="{Binding Category}" 
+                                   Width="150"
+                                   CanUserSort="True"/>
+            </DataGrid.Columns>
+            
+            <!-- Стиль для чередования строк -->
+            <DataGrid.RowStyle>
+                <Style TargetType="{x:Type DataGridRow}">
+                    <Style.Triggers>
+                        <Trigger Property="ItemsControl.AlternationIndex" Value="0">
+                            <Setter Property="Background" Value="White"/>
+                        </Trigger>
+                        <Trigger Property="ItemsControl.AlternationIndex" Value="1">
+                            <Setter Property="Background" Value="#FAFAFA"/>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
+        </DataGrid>
+    </Grid>
+</catel:DataWindow>
+```
+
+6. Дополнительные улучшения (опционально)
+
+Добавьте в ресурсы для переноса текста:
+
+```xml
+<Window.Resources>
+    <Style x:Key="WrapTextStyle" TargetType="{x:Type TextBlock}">
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+</Window.Resources>
+```
+
+И используйте в колонке:
+
+```xml
+<DataGridTextColumn Header="Название" Binding="{Binding Name}" Width="*">
+    <DataGridTextColumn.ElementStyle>
+        <Style TargetType="{x:Type TextBlock}">
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+    </DataGridTextColumn.ElementStyle>
+</DataGridTextColumn>
+```
+
+Преимущества DataGrid:
+
+· Сортировка по клику на заголовок
+· Автоматическое выравнивание
+· Чередование строк для лучшей читаемости
+· Гибкая настройка колонок
+· Встроенная прокрутка
+
+Теперь результаты будут отображаться в двух колонках: название объекта и его категория.
+
+
 Отлично! Сделаю похожим образом с использованием CheckComboBox и паттерна из вашего другого проекта. Вот полная реализация:
 
 ViewModel
