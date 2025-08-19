@@ -1,3 +1,240 @@
+Вы абсолютно правы! Отдельный SearchCategory класс избыточен для этой задачи. Вот упрощенная реализация без него:
+
+Упрощенная ViewModel
+
+```csharp
+[View(typeof(FindToolView))]
+public class FindToolViewModel : ViewModelBase
+{
+    private readonly SCLE_Project _project;
+    private string _searchText;
+    private bool _isSearching;
+    private bool _matchCase;
+
+    // Простые коллекции строк вместо сложных объектов
+    public ObservableCollection<string> AvailableCategories { get; } = new ObservableCollection<string>();
+    public ObservableCollection<string> SelectedCategories { get; } = new ObservableCollection<string>();
+
+    public ObservableCollection<SearchResult> Results { get; } = new ObservableCollection<SearchResult>();
+    public ICommand SearchCommand { get; }
+
+    public string SearchText
+    {
+        get => _searchText;
+        set { _searchText = value; RaisePropertyChanged(nameof(SearchText)); }
+    }
+
+    public bool MatchCase
+    {
+        get => _matchCase;
+        set { _matchCase = value; RaisePropertyChanged(nameof(MatchCase)); }
+    }
+
+    public FindToolViewModel(SCLE_Project project)
+    {
+        _project = project ?? throw new ArgumentNullException(nameof(project));
+        
+        InitializeCategories();
+        SearchCommand = new RelayCommand(ExecuteSearch, CanExecuteSearch);
+    }
+
+    private void InitializeCategories()
+    {
+        // Просто добавляем строки с названиями категорий
+        AvailableCategories.Add("Библиотеки");
+        AvailableCategories.Add("Типы данных");
+        AvailableCategories.Add("POU");
+        AvailableCategories.Add("F-узлы");
+        AvailableCategories.Add("Подсети");
+        AvailableCategories.Add("Подстанции");
+        AvailableCategories.Add("IED устройства");
+
+        // По умолчанию выбираем все категории
+        foreach (var category in AvailableCategories)
+        {
+            SelectedCategories.Add(category);
+        }
+    }
+
+    private bool CanExecuteSearch()
+    {
+        return !_isSearching && 
+               !string.IsNullOrWhiteSpace(SearchText) &&
+               SelectedCategories.Count > 0;
+    }
+
+    private async void ExecuteSearch()
+    {
+        _isSearching = true;
+        Results.Clear();
+
+        try
+        {
+            await Task.Run(PerformSearch);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Ошибка при выполнении поиска: {ex.Message}", 
+                          "Ошибка", 
+                          MessageBoxButton.OK, 
+                          MessageBoxImage.Error);
+        }
+        finally
+        {
+            _isSearching = false;
+        }
+    }
+
+    private void PerformSearch()
+    {
+        var comparison = MatchCase 
+            ? StringComparison.Ordinal 
+            : StringComparison.OrdinalIgnoreCase;
+
+        var searchText = SearchText;
+
+        // Простая проверка по строковым названиям категорий
+        foreach (var category in SelectedCategories)
+        {
+            switch (category)
+            {
+                case "Библиотеки" when _project.LibraryItems != null:
+                    SearchInCollection(_project.LibraryItems, "Библиотеки", searchText, comparison);
+                    break;
+                case "Типы данных" when _project.DataTypeItems != null:
+                    SearchInCollection(_project.DataTypeItems, "Типы данных", searchText, comparison);
+                    break;
+                case "POU" when _project.PouItems != null:
+                    SearchInCollection(_project.PouItems, "POU", searchText, comparison);
+                    break;
+                case "F-узлы" when _project.FNodeTypes != null:
+                    SearchInCollection(_project.FNodeTypes, "F-узлы", searchText, comparison);
+                    break;
+                case "Подсети" when _project.SubnetworkItems != null:
+                    SearchInCollection(_project.SubnetworkItems, "Подсети", searchText, comparison);
+                    break;
+                case "Подстанции" when _project.SubstationItems != null:
+                    SearchInCollection(_project.SubstationItems, "Подстанции", searchText, comparison);
+                    break;
+                case "IED устройства" when _project.IedItems != null:
+                    SearchInCollection(_project.IedItems, "IED устройства", searchText, comparison);
+                    break;
+            }
+        }
+    }
+
+    private void SearchInCollection(IEnumerable collection, string category, string searchText, StringComparison comparison)
+    {
+        foreach (var item in collection)
+        {
+            if (item == null) continue;
+
+            var nameProperty = item.GetType().GetProperty("Name");
+            if (nameProperty == null) continue;
+
+            var name = nameProperty.GetValue(item) as string;
+            if (name == null) continue;
+
+            if (name.Contains(searchText, comparison))
+            {
+                Application.Current.Dispatcher.Invoke(() => 
+                    Results.Add(new SearchResult
+                    {
+                        Name = name,
+                        Category = category,
+                        SourceObject = item
+                    }));
+            }
+        }
+    }
+}
+
+// Максимально простая модель результата
+public class SearchResult
+{
+    public string Name { get; set; }
+    public string Category { get; set; }
+    public object SourceObject { get; set; }
+}
+```
+
+Упрощенный XAML
+
+```xml
+<catel:DataWindow x:Class="Module.IedExplorer.Dialogs.FindToolView"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:catel="http://catel.codeplex.com"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
+                  Height="500" Width="800">
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Панель поиска -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal">
+            <TextBox Text="{Binding SearchText}" Width="250" Margin="0,0,10,0"/>
+            <Button Content="Поиск" Command="{Binding SearchCommand}" Width="80"/>
+            <CheckBox Content="Учитывать регистр" IsChecked="{Binding MatchCase}" Margin="10,0,0,0"/>
+        </StackPanel>
+
+        <!-- CheckComboBox с простыми строками -->
+        <StackPanel Grid.Row="1" Margin="0,10">
+            <TextBlock Text="Категории для поиска:" Margin="0,0,0,5"/>
+            <xctk:CheckComboBox 
+                ItemsSource="{Binding AvailableCategories}"
+                SelectedItemsOverride="{Binding SelectedCategories}"
+                Width="300"/>
+        </StackPanel>
+
+        <!-- Статус -->
+        <TextBlock Grid.Row="2" 
+                   Text="{Binding Results.Count, StringFormat='Найдено: {0}'}"
+                   Margin="0,5" Foreground="Gray"/>
+
+        <!-- Результаты -->
+        <DataGrid Grid.Row="3" ItemsSource="{Binding Results}" AutoGenerateColumns="False">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Название" Binding="{Binding Name}" Width="*"/>
+                <DataGridTextColumn Header="Категория" Binding="{Binding Category}" Width="150"/>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</catel:DataWindow>
+```
+
+Преимущества упрощенного подхода:
+
+1. Меньше кода - нет лишних классов
+2. Проще отладка - только строки вместо сложных объектов
+3. Лучшая производительность - меньше накладных расходов
+4. Легче поддерживать - понятная структура
+5. Меньше зависимостей - не нужны интерфейсы INotifyPropertyChanged
+
+Если нужна обратная связь при изменении выбора:
+
+```csharp
+// Добавить в ViewModel
+private void OnSelectedCategoriesChanged(object sender, NotifyCollectionChangedEventArgs e)
+{
+    if (CanExecuteSearch())
+    {
+        ExecuteSearch();
+    }
+}
+
+// В конструкторе после инициализации:
+SelectedCategories.CollectionChanged += OnSelectedCategoriesChanged;
+```
+
+Такой подход сохраняет всю функциональность, но делает код значительно проще и понятнее.
+
+
 Вот как разбить результаты на две колонки с отображением категории:
 
 1. Обновляем ViewModel - возвращаем SearchResult
